@@ -365,33 +365,59 @@ body {
   gap: 0.75rem;
 }
 
+/* Product card com promoções */
 .product-card {
-  background: radial-gradient(circle at top, #222 0, #050505 60%);
-  border-radius: var(--radius-md);
-  padding: 0.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.04);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
-  min-height: 210px;
+  height: 100%;
+}
+
+.product-card .primary-button.full {
+  margin-top: auto;
+}
+
+.product-grid,
+.featured-products-grid {
+  align-items: stretch; /* se for display: grid ou flex, isso faz os itens terem mesma altura */
 }
 
 .product-image-placeholder {
-  border-radius: var(--radius-md);
-  background: repeating-linear-gradient(
-    135deg,
-    rgba(255, 255, 255, 0.06),
-    rgba(255, 255, 255, 0.06) 8px,
-    rgba(255, 255, 255, 0.02) 8px,
-    rgba(255, 255, 255, 0.02) 16px
-  );
-  height: 80px;
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.7);
-  margin-bottom: 0.3rem;
+}
+
+.product-image-placeholder img {
+  max-width: 85%;
+  max-height: 85%;
+  object-fit: contain;
+  display: block;
+}
+
+.product-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--color-primary);
+  color: #061021;
+}
+
+.product-price-wrapper {
+  margin-top: 0.35rem;
+}
+
+.product-price-original {
+  display: inline-block;
+  margin-right: 0.4rem;
+  font-size: 0.85rem;
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
 .product-description {
@@ -401,9 +427,12 @@ body {
 }
 
 .product-price {
-  font-weight: 700;
+  font-weight: 600;
+}
+
+.product-promo-text {
   margin-top: 0.2rem;
-  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
   color: var(--color-primary);
 }
 
@@ -714,11 +743,23 @@ body {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.55);      /* escurece o fundo */
+  backdrop-filter: blur(4px);           /* leve blur no fundo */
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 999;
+}
+
+/* Caixa do modal */
+.modal {
+  background: #020514;                  /* fundo sólido, sem transparência */
+  border-radius: 18px;
+  padding: 1.2rem 1.5rem;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .modal-card {
@@ -731,17 +772,30 @@ body {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.85);
 }
 
+/* Cabeçalho do modal (título + X) */
 .modal-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
   margin-bottom: 0.75rem;
 }
 
+.modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.modal-close {
+  border: none;
+  background: transparent;
+  color: var(--color-light);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* Corpo do modal */
 .modal-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
+  font-size: 0.9rem;
 }
 
 .modal-body label {
@@ -824,13 +878,18 @@ body {
 }
 
 .admin-form input,
-.admin-form textarea {
-  padding: 0.45rem 0.6rem;
-  border-radius: 10px;
+.admin-form textarea,
+.admin-form select {
+  width: 100%;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   background: #020514;
-  color: #fff;
+  color: var(--color-light);
   font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease,
+    background 0.15s ease;
 }
 
 .checkbox-inline {
@@ -974,3 +1033,239 @@ body {
   font-size: 0.8rem;
   color: var(--color-muted);
 }
+
+.admin-main {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* SIDEBAR */
+
+.admin-sidebar {
+  width: 220px;
+  background: rgba(2, 8, 26, 0.98);
+  border-radius: 12px;
+  padding: 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.admin-sidebar-btn {
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: var(--color-light);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.admin-sidebar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.admin-sidebar-btn.active {
+  background: var(--color-primary);
+  color: #000;
+  font-weight: 600;
+}
+
+/* CONTEÚDO PRINCIPAL */
+
+.admin-content {
+  flex: 1;
+}
+
+/* layout produtos (já existia, mas garante) */
+
+.admin-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.5fr);
+  gap: 1.2rem;
+}
+
+/* CATEGORIAS */
+
+.admin-categories-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+  gap: 1.2rem;
+}
+
+.admin-category-list-wrapper {
+  margin-top: 0;
+}
+
+.admin-category-list {
+  list-style: none;
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.admin-category-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.15);
+  font-size: 0.85rem;
+}
+
+.admin-category-desc {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.admin-item-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.link-button.small {
+  font-size: 0.75rem;
+  padding-inline: 0.4rem;
+}
+
+.link-button.small.danger {
+  color: #ff6b6b;
+}
+
+/* responsivo */
+
+@media (max-width: 960px) {
+  .admin-main {
+    flex-direction: column;
+  }
+
+  .admin-sidebar {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-around;
+  }
+
+  .admin-layout,
+  .admin-categories-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.product-search-inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.product-search-inline input {
+  flex: 1;
+}
+
+.secondary-button {
+  border-radius: 999px;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  color: var(--color-light);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease,
+    transform 0.1s ease;
+}
+
+.secondary-button:hover {
+  background: rgba(255, 255, 255, 0.06);
+  transform: translateY(-1px);
+}
+
+.selected-product-hint {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--color-muted);
+}
+
+/* Modal de busca de produtos para promoções */
+.modal.promo-product-modal {
+  max-width: 520px;
+  width: 100%;
+}
+
+.promo-product-search-input {
+  width: 100%;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #020514;
+  color: var(--color-light);
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+}
+
+.promo-product-results {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.promo-product-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.promo-product-item {
+  padding: 0.45rem 0.6rem;
+  border-radius: 10px;
+  background: rgba(2, 8, 26, 0.96);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.promo-product-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.promo-product-meta {
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.cart-item-code {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-muted);
+}
+
+.cart-item-promo {
+  font-size: 0.8rem;
+  color: var(--color-primary);
+  margin-top: 0.15rem;
+}
+
+.cart-item-price-original {
+  text-decoration: line-through;
+  opacity: 0.6;
+  margin-right: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.cart-item-price-final {
+  font-weight: 600;
+}
+
+.cart-summary-discount span {
+  color: #ff6b6b;
+}
+

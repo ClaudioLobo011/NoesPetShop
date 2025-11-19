@@ -1,18 +1,21 @@
+// src/pages/Admin.jsx
 import React, { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { API_URL } from '../config/apiConfig'
 
 function AdminPage() {
   const { adminUser, checking, logout } = useAuth()
-  const [products, setProducts] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [editingId, setEditingId] = useState(null) // <- ID em edição
 
-  const [form, setForm] = useState({
+  const [activeSection, setActiveSection] = useState('products') // 'products' | 'categories'
+
+  // ---- PRODUTOS ----
+  const [products, setProducts] = useState([])
+  const [loadingProducts, setLoadingProducts] = useState(true)
+  const [savingProduct, setSavingProduct] = useState(false)
+  const [editingProductId, setEditingProductId] = useState(null)
+  const [searchTerm, setSearchTerm] = useState('')
+
+  const [productForm, setProductForm] = useState({
     name: '',
     description: '',
     price: '',
@@ -22,17 +25,66 @@ function AdminPage() {
     codBarras: '',
   })
 
+  // ---- CATEGORIAS ----
+  const [categories, setCategories] = useState([])
+  const [loadingCategories, setLoadingCategories] = useState(true)
+  const [savingCategory, setSavingCategory] = useState(false)
+  const [editingCategoryId, setEditingCategoryId] = useState(null)
+
+  const [categoryForm, setCategoryForm] = useState({
+    name: '',
+    description: '',
+    type: 'category', // 'category' | 'subcategory'
+    parentId: '',
+  })
+
+  // ---- PROMOÇÕES ----
+  const [promotions, setPromotions] = useState([])
+  const [loadingPromotions, setLoadingPromotions] = useState(true)
+  const [savingPromotion, setSavingPromotion] = useState(false)
+  const [editingPromotionId, setEditingPromotionId] = useState(null)
+  const [promotionForm, setPromotionForm] = useState({
+    productId: '',
+    type: 'percentage', // 'percentage' | 'takepay' | 'above'
+    percent: '',
+    takeQty: '',
+    payQty: '',
+    minQty: '',
+    active: true,
+  })
+
+  // busca de produto para promoções
+  const [promotionProductSearch, setPromotionProductSearch] = useState('')
+  const [selectedPromotionProduct, setSelectedPromotionProduct] =
+    useState(null)
+  const [productSearchModalOpen, setProductSearchModalOpen] = useState(false)
+  const [productNameQuery, setProductNameQuery] = useState('')
+  const [productNameResults, setProductNameResults] = useState([])
+
+  // ---- MENSAGENS GERAIS ----
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+
   useEffect(() => {
     if (!adminUser) {
-      setLoading(false)
+      setLoadingProducts(false)
+      setLoadingCategories(false)
+      setLoadingPromotions(false)
       return
     }
     fetchProducts()
+    fetchCategories()
+    fetchPromotions()
   }, [adminUser])
 
-  async function fetchProducts() {
-    setLoading(true)
+  function clearMessages() {
     setError('')
+    setSuccess('')
+  }
+
+  async function fetchProducts() {
+    setLoadingProducts(true)
+    clearMessages()
     try {
       const res = await fetch(`${API_URL}/api/products`)
       if (!res.ok) throw new Error('Erro ao buscar produtos')
@@ -42,20 +94,322 @@ function AdminPage() {
       console.error(err)
       setError('Erro ao carregar produtos.')
     } finally {
-      setLoading(false)
+      setLoadingProducts(false)
     }
   }
 
-  function handleChange(e) {
+  async function fetchCategories() {
+    setLoadingCategories(true)
+    clearMessages()
+    try {
+      const res = await fetch(`${API_URL}/api/categories`)
+      if (!res.ok) throw new Error('Erro ao buscar categorias')
+      const data = await res.json()
+      setCategories(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error(err)
+      setError('Erro ao carregar categorias.')
+    } finally {
+      setLoadingCategories(false)
+    }
+  }
+
+  async function fetchPromotions() {
+    setLoadingPromotions(true)
+    clearMessages()
+    try {
+      const res = await fetch(`${API_URL}/api/promotions`)
+      if (!res.ok) throw new Error('Erro ao buscar promoções')
+      const data = await res.json()
+      setPromotions(Array.isArray(data) ? data : [])
+    } catch (err) {
+      console.error(err)
+      setError('Erro ao carregar promoções.')
+    } finally {
+      setLoadingPromotions(false)
+    }
+  }
+
+  function handlePromotionChange(e) {
     const { name, value, type, checked } = e.target
-    setForm((prev) => ({
+    setPromotionForm((prev) => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value,
     }))
   }
 
-  function resetForm() {
-    setForm({
+  function resetPromotionForm() {
+    setPromotionForm({
+      productId: '',
+      type: 'percentage',
+      percent: '',
+      takeQty: '',
+      payQty: '',
+      minQty: '',
+      active: true,
+    })
+    setEditingPromotionId(null)
+    setSelectedPromotionProduct(null)
+    setPromotionProductSearch('')
+  }
+
+  function validatePromotionForm() {
+    if (!promotionForm.productId) {
+      setError('Selecione um produto.')
+      return false
+    }
+
+    if (promotionForm.type === 'percentage') {
+      if (!promotionForm.percent) {
+        setError('Informe o percentual de desconto.')
+        return false
+      }
+    }
+
+    if (promotionForm.type === 'takepay') {
+      if (!promotionForm.takeQty || !promotionForm.payQty) {
+        setError('Informe quantos leva e quantos paga.')
+        return false
+      }
+    }
+
+    if (promotionForm.type === 'above') {
+      if (!promotionForm.minQty || !promotionForm.percent) {
+        setError('Informe a quantidade mínima e o percentual de desconto.')
+        return false
+      }
+    }
+
+    return true
+  }
+
+  async function handlePromotionSubmit(e) {
+    e.preventDefault()
+    clearMessages()
+
+    if (!validatePromotionForm()) return
+
+    const body = {
+      productId: Number(promotionForm.productId),
+      type: promotionForm.type,
+      active: promotionForm.active,
+    }
+
+    if (promotionForm.type === 'percentage') {
+      body.percent = Number(promotionForm.percent)
+    }
+
+    if (promotionForm.type === 'takepay') {
+      body.takeQty = Number(promotionForm.takeQty)
+      body.payQty = Number(promotionForm.payQty)
+    }
+
+    if (promotionForm.type === 'above') {
+      body.minQty = Number(promotionForm.minQty)
+      body.percent = Number(promotionForm.percent)
+    }
+
+    setSavingPromotion(true)
+    try {
+      if (editingPromotionId === null) {
+        const res = await fetch(`${API_URL}/api/promotions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        })
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.message || 'Erro ao salvar promoção.')
+        }
+
+        setPromotions((prev) => [...prev, data])
+        resetPromotionForm()
+        setSuccess('Promoção criada com sucesso.')
+      } else {
+        const res = await fetch(
+          `${API_URL}/api/promotions/${editingPromotionId}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(body),
+          },
+        )
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.message || 'Erro ao atualizar promoção.')
+        }
+
+        setPromotions((prev) =>
+          prev.map((p) => (p.id === data.id ? data : p)),
+        )
+        resetPromotionForm()
+        setSuccess('Promoção atualizada com sucesso.')
+      }
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setSavingPromotion(false)
+    }
+  }
+
+  function handleEditPromotion(promo) {
+    setEditingPromotionId(promo.id)
+    setPromotionForm({
+      productId: promo.productId ? String(promo.productId) : '',
+      type: promo.type || 'percentage',
+      percent:
+        promo.percent !== undefined && promo.percent !== null
+          ? String(promo.percent)
+          : '',
+      takeQty:
+        promo.takeQty !== undefined && promo.takeQty !== null
+          ? String(promo.takeQty)
+          : '',
+      payQty:
+        promo.payQty !== undefined && promo.payQty !== null
+          ? String(promo.payQty)
+          : '',
+      minQty:
+        promo.minQty !== undefined && promo.minQty !== null
+          ? String(promo.minQty)
+          : '',
+      active: promo.active !== false,
+    })
+
+    const product = products.find((p) => p.id === promo.productId)
+    setSelectedPromotionProduct(product || null)
+    setPromotionProductSearch('')
+    clearMessages()
+  }
+
+  async function handleDeletePromotion(id) {
+    const ok = window.confirm('Tem certeza que deseja excluir esta promoção?')
+    if (!ok) return
+
+    clearMessages()
+    try {
+      const res = await fetch(`${API_URL}/api/promotions/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao excluir promoção.')
+      }
+
+      setPromotions((prev) => prev.filter((p) => p.id !== id))
+      if (editingPromotionId === id) resetPromotionForm()
+      setSuccess('Promoção excluída com sucesso.')
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    }
+  }
+
+  function describePromotion(promo) {
+    if (promo.type === 'percentage') {
+      return `${promo.percent}% de desconto`
+    }
+    if (promo.type === 'takepay') {
+      return `Leve ${promo.takeQty} pague ${promo.payQty}`
+    }
+    if (promo.type === 'above') {
+      return `Acima de ${promo.minQty} unidades, ${promo.percent}% de desconto`
+    }
+    return 'Promoção'
+  }
+
+  function runPromotionProductSearch() {
+    const term = promotionProductSearch.trim()
+    if (!term) {
+      setError('Digite um código, código de barras ou nome do produto.')
+      return
+    }
+
+    const firstChar = term[0]
+
+    // 👉 Começou com número: busca por Cod ou CodBarras
+    if (/[0-9]/.test(firstChar)) {
+      const matches = products.filter((p) => {
+        const codStr = String(p.cod ?? p.id ?? '')
+        const codBarrasStr = (p.codBarras || '').toString()
+        return codStr === term || codBarrasStr === term
+      })
+
+      if (matches.length === 0) {
+        setSelectedPromotionProduct(null)
+        setError('Nenhum produto encontrado para esse código / código de barras.')
+        return
+      }
+
+      const product = matches[0] // se tiver mais de um pega o primeiro
+      selectPromotionProduct(product)
+      return
+    }
+
+    // 👉 Começou com letra: abre modal de busca por nome
+    const lower = term.toLowerCase()
+    const results = products.filter((p) =>
+      (p.name || '').toLowerCase().includes(lower),
+    )
+
+    setProductNameQuery(term)
+    setProductNameResults(results)
+    setProductSearchModalOpen(true)
+  }
+
+  function handlePromotionProductKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      runPromotionProductSearch()
+    }
+  }
+
+  function selectPromotionProduct(product) {
+    if (!product) return
+
+    setSelectedPromotionProduct(product)
+    setPromotionForm((prev) => ({
+      ...prev,
+      productId: product.id ? String(product.id) : '',
+    }))
+    setProductSearchModalOpen(false)
+    setPromotionProductSearch('')
+    setError('')
+  }
+
+  function handleProductNameQueryChange(e) {
+    const value = e.target.value
+    setProductNameQuery(value)
+
+    const lower = value.toLowerCase()
+    const results = products.filter((p) =>
+      (p.name || '').toLowerCase().includes(lower),
+    )
+    setProductNameResults(results)
+  }
+
+  function closeProductSearchModal() {
+    setProductSearchModalOpen(false)
+  }
+
+  // ===== PRODUTOS =====
+
+  function handleProductChange(e) {
+    const { name, value, type, checked } = e.target
+    setProductForm((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }))
+  }
+
+  function resetProductForm() {
+    setProductForm({
       name: '',
       description: '',
       price: '',
@@ -64,30 +418,28 @@ function AdminPage() {
       featured: true,
       codBarras: '',
     })
-    setEditingId(null)
+    setEditingProductId(null)
   }
 
-  async function handleSubmit(e) {
+  async function handleProductSubmit(e) {
     e.preventDefault()
-    setError('')
-    setSuccess('')
+    clearMessages()
 
-    if (!form.name || !form.price) {
+    if (!productForm.name || !productForm.price) {
       setError('Nome e preço são obrigatórios.')
       return
     }
 
-    setSaving(true)
+    setSavingProduct(true)
     try {
-      if (editingId === null) {
-        // CRIAR
+      if (editingProductId === null) {
         const res = await fetch(`${API_URL}/api/products`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            ...form,
-            price: Number(form.price),
+            ...productForm,
+            price: Number(productForm.price),
           }),
         })
 
@@ -97,19 +449,21 @@ function AdminPage() {
         }
 
         setProducts((prev) => [...prev, data])
-        resetForm()
+        resetProductForm()
         setSuccess('Produto criado com sucesso.')
       } else {
-        // EDITAR
-        const res = await fetch(`${API_URL}/api/products/${editingId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            ...form,
-            price: Number(form.price),
-          }),
-        })
+        const res = await fetch(
+          `${API_URL}/api/products/${editingProductId}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+              ...productForm,
+              price: Number(productForm.price),
+            }),
+          },
+        )
 
         const data = await res.json()
         if (!res.ok) {
@@ -119,77 +473,39 @@ function AdminPage() {
         setProducts((prev) =>
           prev.map((p) => (p.id === data.id ? data : p)),
         )
-        resetForm()
+        resetProductForm()
         setSuccess('Produto atualizado com sucesso.')
       }
     } catch (err) {
       console.error(err)
       setError(err.message)
     } finally {
-      setSaving(false)
+      setSavingProduct(false)
     }
   }
 
-  function handleEdit(product) {
-    setEditingId(product.id)
-    setForm({
+  function handleEditProduct(product) {
+    setEditingProductId(product.id)
+    setProductForm({
       name: product.name || '',
       description: product.description || '',
       price:
         typeof product.price === 'number'
-          ? product.price.toString().replace('.', ',').replace(',', '.')
+          ? product.price.toString().replace(',', '.')
           : product.price || '',
       category: product.category || '',
       subcategory: product.subcategory || '',
       featured: product.featured !== false,
       codBarras: product.codBarras || '',
     })
-    setSuccess('')
-    setError('')
+    clearMessages()
   }
 
-  async function handleUploadImage(product, file) {
-    if (!file) return
+  async function handleDeleteProduct(id) {
+    const ok = window.confirm('Tem certeza que deseja excluir este produto?')
+    if (!ok) return
 
-    if (!product.codBarras) {
-      setError('Defina um Código de barras no produto antes de enviar a imagem.')
-      return
-    }
-
-    const formData = new FormData()
-    formData.append('codBarras', product.codBarras) // 🚨 ordem importa aqui
-    formData.append('image', file)
-
-    try {
-      setError('')
-      setSuccess('')
-      const res = await fetch(
-        `${API_URL}/api/products/${product.id}/image`,
-        {
-          method: 'POST',
-          credentials: 'include',
-          body: formData,
-        },
-      )
-
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.message || 'Erro ao enviar imagem.')
-      }
-
-      setSuccess('Imagem enviada com sucesso.')
-    } catch (err) {
-      console.error(err)
-      setError(err.message)
-    }
-  }
-
-  async function handleDelete(id) {
-    const confirmDelete = window.confirm(
-      'Tem certeza que deseja excluir este produto?',
-    )
-    if (!confirmDelete) return
-
+    clearMessages()
     try {
       const res = await fetch(`${API_URL}/api/products/${id}`, {
         method: 'DELETE',
@@ -201,7 +517,7 @@ function AdminPage() {
       }
 
       setProducts((prev) => prev.filter((p) => p.id !== id))
-      if (editingId === id) resetForm()
+      if (editingProductId === id) resetProductForm()
       setSuccess('Produto excluído com sucesso.')
     } catch (err) {
       console.error(err)
@@ -209,16 +525,46 @@ function AdminPage() {
     }
   }
 
-  // FILTRO NA GRID (painel admin)
+  async function handleUploadImage(product, file) {
+    if (!file) return
+
+    if (!product.codBarras) {
+      setError('Defina um Código de barras no produto antes de enviar a imagem.')
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('codBarras', product.codBarras)
+    formData.append('image', file)
+
+    try {
+      clearMessages()
+      const res = await fetch(
+        `${API_URL}/api/products/${product.id}/image`,
+        {
+          method: 'POST',
+          credentials: 'include',
+          body: formData,
+        },
+      )
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao enviar imagem.')
+      }
+      setSuccess('Imagem enviada com sucesso.')
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    }
+  }
+
   const filteredProducts = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
     if (!term) return products
-
     return products.filter((p) => {
       const cod = String(p.cod ?? p.id ?? '').toLowerCase()
       const codBarras = (p.codBarras || '').toLowerCase()
       const name = (p.name || '').toLowerCase()
-
       return (
         cod.includes(term) ||
         codBarras.includes(term) ||
@@ -226,6 +572,152 @@ function AdminPage() {
       )
     })
   }, [products, searchTerm])
+
+  // ===== CATEGORIAS =====
+
+  const parentOptions = useMemo(
+    () => categories.filter((c) => !c.parentId), // só categorias principais
+    [categories],
+  )
+
+  function handleCategoryChange(e) {
+    const { name, value } = e.target
+    setCategoryForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }))
+  }
+
+  function resetCategoryForm() {
+    setCategoryForm({
+      name: '',
+      description: '',
+      type: 'category',
+      parentId: '',
+    })
+    setEditingCategoryId(null)
+  }
+
+  async function handleCategorySubmit(e) {
+    e.preventDefault()
+    clearMessages()
+
+    if (!categoryForm.name) {
+      setError('Nome da categoria é obrigatório.')
+      return
+    }
+
+    if (categoryForm.type === 'subcategory' && !categoryForm.parentId) {
+      setError('Selecione a categoria pai para a subcategoria.')
+      return
+    }
+
+    const body = {
+      name: categoryForm.name,
+      description: categoryForm.description,
+      parentId:
+        categoryForm.type === 'subcategory' ? categoryForm.parentId : null,
+    }
+
+    setSavingCategory(true)
+    try {
+      if (editingCategoryId === null) {
+        const res = await fetch(`${API_URL}/api/categories`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(body),
+        })
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.message || 'Erro ao salvar categoria.')
+        }
+
+        setCategories((prev) => [...prev, data])
+        resetCategoryForm()
+        setSuccess('Categoria criada com sucesso.')
+      } else {
+        const res = await fetch(
+          `${API_URL}/api/categories/${editingCategoryId}`,
+          {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(body),
+          },
+        )
+
+        const data = await res.json()
+        if (!res.ok) {
+          throw new Error(data.message || 'Erro ao atualizar categoria.')
+        }
+
+        setCategories((prev) =>
+          prev.map((c) => (c.id === data.id ? data : c)),
+        )
+        resetCategoryForm()
+        setSuccess('Categoria atualizada com sucesso.')
+      }
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setSavingCategory(false)
+    }
+  }
+
+  async function handleDeleteCategory(id) {
+    const ok = window.confirm(
+      'Tem certeza que deseja excluir esta categoria e suas subcategorias?',
+    )
+    if (!ok) return
+
+    clearMessages()
+    try {
+      const res = await fetch(`${API_URL}/api/categories/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao excluir categoria.')
+      }
+
+      setCategories((prev) =>
+        prev.filter(
+          (c) =>
+            c.id !== id &&
+            c.parentId !== id &&
+            c.cod !== id, // só por garantia
+        ),
+      )
+      if (editingCategoryId === id) resetCategoryForm()
+      setSuccess('Categoria excluída com sucesso.')
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    }
+  }
+
+  function handleEditCategory(cat) {
+    setEditingCategoryId(cat.id)
+    setCategoryForm({
+      name: cat.name || '',
+      description: cat.description || '',
+      type: cat.parentId ? 'subcategory' : 'category',
+      parentId: cat.parentId ? String(cat.parentId) : '',
+    })
+    clearMessages()
+  }
+
+  function getCategoryParentName(cat) {
+    if (!cat.parentId) return null
+    const parent = categories.find((c) => c.id === cat.parentId)
+    return parent?.name || null
+  }
+
+  // ===== RENDER =====
 
   if (checking) {
     return <p>Verificando permissão...</p>
@@ -247,209 +739,680 @@ function AdminPage() {
         </div>
       </div>
 
-      <div className="admin-layout">
-        {/* FORM CADASTRO / EDIÇÃO */}
-        <form className="admin-form" onSubmit={handleSubmit}>
-          <h3>
-            {editingId === null
-              ? 'Novo produto'
-              : `Editar produto #${editingId}`}
-          </h3>
+      <div className="admin-main">
+        <aside className="admin-sidebar">
+          <button
+            type="button"
+            className={
+              activeSection === 'products'
+                ? 'admin-sidebar-btn active'
+                : 'admin-sidebar-btn'
+            }
+            onClick={() => {
+              setActiveSection('products')
+              clearMessages()
+            }}
+          >
+            Cadastro de Produtos
+          </button>
 
-          <label>
-            Nome*
-            <input
-              type="text"
-              name="name"
-              value={form.name}
-              onChange={handleChange}
-              required
-            />
-          </label>
+          <button
+            type="button"
+            className={
+              activeSection === 'categories'
+                ? 'admin-sidebar-btn active'
+                : 'admin-sidebar-btn'
+            }
+            onClick={() => {
+              setActiveSection('categories')
+              clearMessages()
+            }}
+          >
+            Cadastro de Categorias
+          </button>
 
-          <label>
-            Descrição
-            <textarea
-              name="description"
-              rows={3}
-              value={form.description}
-              onChange={handleChange}
-            />
-          </label>
+          <button
+            type="button"
+            className={
+              activeSection === 'promotions'
+                ? 'admin-sidebar-btn active'
+                : 'admin-sidebar-btn'
+            }
+            onClick={() => {
+              setActiveSection('promotions')
+              clearMessages()
+            }}
+          >
+            Promoções
+          </button>
+        </aside>
 
-          <label>
-            Preço (R$)*
-            <input
-              type="number"
-              step="0.01"
-              name="price"
-              value={form.price}
-              onChange={handleChange}
-              required
-            />
-          </label>
-
-          <div className="form-row two-columns">
-            <label>
-              Categoria
-              <input
-                type="text"
-                name="category"
-                value={form.category}
-                onChange={handleChange}
-              />
-            </label>
-            <label>
-              Subcategoria
-              <input
-                type="text"
-                name="subcategory"
-                value={form.subcategory}
-                onChange={handleChange}
-              />
-            </label>
-          </div>
-
-          <label>
-            Código de barras
-            <input
-              type="text"
-              name="codBarras"
-              value={form.codBarras}
-              onChange={handleChange}
-              placeholder="Ex: 7891234567890"
-            />
-          </label>
-
-          <label className="checkbox-inline">
-            <input
-              type="checkbox"
-              name="featured"
-              checked={form.featured}
-              onChange={handleChange}
-            />
-            Mostrar em &quot;Produtos em destaque&quot;
-          </label>
-
+        <div className="admin-content">
           {error && <p className="modal-error">{error}</p>}
           {success && <p className="admin-success">{success}</p>}
 
-          <div className="form-row form-actions">
-            {editingId !== null && (
-              <button
-                type="button"
-                className="link-button"
-                onClick={resetForm}
-              >
-                Cancelar edição
-              </button>
-            )}
-            <button
-              type="submit"
-              className="primary-button full"
-              disabled={saving}
-            >
-              {saving
-                ? editingId === null
-                  ? 'Salvando...'
-                  : 'Atualizando...'
-                : editingId === null
-                ? 'Salvar produto'
-                : 'Salvar alterações'}
-            </button>
-          </div>
-        </form>
+          {activeSection === 'products' && (
+            <div className="admin-layout">
+              {/* FORM PRODUTOS */}
+              <form className="admin-form" onSubmit={handleProductSubmit}>
+                <h3>
+                  {editingProductId === null
+                    ? 'Novo produto'
+                    : `Editar produto #${editingProductId}`}
+                </h3>
 
-        {/* LISTAGEM + BUSCA + AÇÕES */}
-        <div className="admin-list">
-          <div className="admin-list-header">
-            <h3>Produtos cadastrados</h3>
-            <input
-              type="text"
-              className="admin-search-input"
-              placeholder="Buscar por Cod, CodBarras ou Nome..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+                <label>
+                  Nome*
+                  <input
+                    type="text"
+                    name="name"
+                    value={productForm.name}
+                    onChange={handleProductChange}
+                    required
+                  />
+                </label>
 
-          {loading ? (
-            <p>Carregando produtos...</p>
-          ) : filteredProducts.length === 0 ? (
-            <p>Nenhum produto encontrado.</p>
-          ) : (
-            <ul className="admin-products-list">
-              {filteredProducts.map((p) => (
-                <li key={p.id} className="admin-product-item">
-                  <div>
-                    <strong>{p.name}</strong>
-                    <p>
-                      {p.price?.toLocaleString?.('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      }) || `R$ ${p.price}`}
-                    </p>
+                <label>
+                  Descrição
+                  <textarea
+                    name="description"
+                    rows={3}
+                    value={productForm.description}
+                    onChange={handleProductChange}
+                  />
+                </label>
 
-                    <div
-                      style={{
-                        fontSize: '0.75rem',
-                        marginTop: '0.25rem',
-                        color: 'var(--color-muted)',
-                      }}
+                <label>
+                  Preço (R$)*
+                  <input
+                    type="number"
+                    step="0.01"
+                    name="price"
+                    value={productForm.price}
+                    onChange={handleProductChange}
+                    required
+                  />
+                </label>
+
+                <div className="form-row two-columns">
+                  <label>
+                    Categoria
+                    <input
+                      type="text"
+                      name="category"
+                      value={productForm.category}
+                      onChange={handleProductChange}
+                    />
+                  </label>
+                  <label>
+                    Subcategoria
+                    <input
+                      type="text"
+                      name="subcategory"
+                      value={productForm.subcategory}
+                      onChange={handleProductChange}
+                    />
+                  </label>
+                </div>
+
+                <label>
+                  Código de barras
+                  <input
+                    type="text"
+                    name="codBarras"
+                    value={productForm.codBarras}
+                    onChange={handleProductChange}
+                    placeholder="Ex: 7891234567890"
+                  />
+                </label>
+
+                <label className="checkbox-inline">
+                  <input
+                    type="checkbox"
+                    name="featured"
+                    checked={productForm.featured}
+                    onChange={handleProductChange}
+                  />
+                  Mostrar em &quot;Produtos em destaque&quot;
+                </label>
+
+                <div className="form-row form-actions">
+                  {editingProductId !== null && (
+                    <button
+                      type="button"
+                      className="link-button"
+                      onClick={resetProductForm}
                     >
-                      <span>Cod: {p.cod || p.id}</span>
-                      {p.codBarras && (
-                        <span> • CodBarras: {p.codBarras}</span>
-                      )}
-                    </div>
+                      Cancelar edição
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="primary-button full"
+                    disabled={savingProduct}
+                  >
+                    {savingProduct
+                      ? editingProductId === null
+                        ? 'Salvando...'
+                        : 'Atualizando...'
+                      : editingProductId === null
+                      ? 'Salvar produto'
+                      : 'Salvar alterações'}
+                  </button>
+                </div>
+              </form>
 
-                    {p.category && (
-                      <small>
-                        {p.category}
-                        {p.subcategory ? ` • ${p.subcategory}` : ''}
+              {/* LISTA PRODUTOS */}
+              <div className="admin-list">
+                <div className="admin-list-header">
+                  <h3>Produtos cadastrados</h3>
+                  <input
+                    type="text"
+                    className="admin-search-input"
+                    placeholder="Buscar por Cod, CodBarras ou Nome..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+
+                {loadingProducts ? (
+                  <p>Carregando produtos...</p>
+                ) : filteredProducts.length === 0 ? (
+                  <p>Nenhum produto encontrado.</p>
+                ) : (
+                  <ul className="admin-products-list">
+                    {filteredProducts.map((p) => (
+                      <li key={p.id} className="admin-product-item">
+                        <div>
+                          <strong>{p.name}</strong>
+                          <p>
+                            {p.price?.toLocaleString?.('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            }) || `R$ ${p.price}`}
+                          </p>
+
+                            <div
+                              style={{
+                                fontSize: '0.75rem',
+                                marginTop: '0.25rem',
+                                color: 'var(--color-muted)',
+                              }}
+                            >
+                              <span>Cod: {p.cod || p.id}</span>
+                              {p.codBarras && <span> • CodBarras: {p.codBarras}</span>}
+                            </div>
+
+                          {p.category && (
+                            <small>
+                              {p.category}
+                              {p.subcategory ? ` • ${p.subcategory}` : ''}
+                            </small>
+                          )}
+                        </div>
+
+                        <div className="admin-item-actions">
+                          <label className="link-button small">
+                            Imagem
+                            <input
+                              type="file"
+                              accept="image/png"
+                              style={{ display: 'none' }}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0]
+                                if (file) {
+                                  handleUploadImage(p, file)
+                                }
+                                e.target.value = ''
+                              }}
+                            />
+                          </label>
+
+                          <button
+                            type="button"
+                            className="link-button small"
+                            onClick={() => handleEditProduct(p)}
+                          >
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            className="link-button small danger"
+                            onClick={() => handleDeleteProduct(p.id)}
+                          >
+                            Excluir
+                          </button>
+                          {p.featured && (
+                            <span className="admin-badge">Destaque</span>
+                          )}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'categories' && (
+            <div className="admin-categories">
+              <div className="admin-categories-layout">
+                {/* FORM CATEGORIAS */}
+                <form
+                  className="admin-form admin-category-form"
+                  onSubmit={handleCategorySubmit}
+                >
+                  <h3>
+                    {editingCategoryId === null
+                      ? 'Nova categoria'
+                      : `Editar categoria #${editingCategoryId}`}
+                  </h3>
+
+                  <label>
+                    Nome*
+                    <input
+                      type="text"
+                      name="name"
+                      value={categoryForm.name}
+                      onChange={handleCategoryChange}
+                      required
+                    />
+                  </label>
+
+                  <label>
+                    Tipo
+                    <select
+                      name="type"
+                      value={categoryForm.type}
+                      onChange={handleCategoryChange}
+                    >
+                      <option value="category">Categoria principal</option>
+                      <option value="subcategory">Subcategoria</option>
+                    </select>
+                  </label>
+
+                  {categoryForm.type === 'subcategory' && (
+                    <label>
+                      Categoria pai*
+                      <select
+                        name="parentId"
+                        value={categoryForm.parentId}
+                        onChange={handleCategoryChange}
+                      >
+                        <option value="">Selecione...</option>
+                        {parentOptions.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name} (Cod {c.cod || c.id})
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
+                  <label>
+                    Descrição
+                    <textarea
+                      name="description"
+                      rows={3}
+                      value={categoryForm.description}
+                      onChange={handleCategoryChange}
+                    />
+                  </label>
+
+                  <div className="form-row form-actions">
+                    {editingCategoryId !== null && (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={resetCategoryForm}
+                      >
+                        Cancelar edição
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      className="primary-button full"
+                      disabled={savingCategory}
+                    >
+                      {savingCategory
+                        ? editingCategoryId === null
+                          ? 'Salvando...'
+                          : 'Atualizando...'
+                        : editingCategoryId === null
+                        ? 'Salvar categoria'
+                        : 'Salvar alterações'}
+                    </button>
+                  </div>
+                </form>
+
+                {/* LISTA CATEGORIAS */}
+                <div className="admin-list admin-category-list-wrapper">
+                  <h3>Categorias cadastradas</h3>
+                  {loadingCategories ? (
+                    <p>Carregando categorias...</p>
+                  ) : categories.length === 0 ? (
+                    <p>Nenhuma categoria cadastrada.</p>
+                  ) : (
+                    <ul className="admin-category-list">
+                      {categories.map((c) => {
+                        const parentName = getCategoryParentName(c)
+                        const isSub = !!c.parentId
+                        return (
+                          <li key={c.id} className="admin-category-item">
+                            <div>
+                              <strong>{c.name}</strong>
+                              <p className="admin-category-desc">
+                                {isSub
+                                  ? parentName
+                                    ? `Subcategoria de ${parentName}`
+                                    : 'Subcategoria'
+                                  : 'Categoria principal'}
+                              </p>
+                              {c.description && (
+                                <p className="admin-category-desc">
+                                  {c.description}
+                                </p>
+                              )}
+                              <small>Cod: {c.cod || c.id}</small>
+                            </div>
+                            <div className="admin-item-actions">
+                              <button
+                                type="button"
+                                className="link-button small"
+                                onClick={() => handleEditCategory(c)}
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="link-button small danger"
+                                onClick={() => handleDeleteCategory(c.id)}
+                              >
+                                Excluir
+                              </button>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {activeSection === 'promotions' && (
+            <div className="admin-categories">
+              <div className="admin-categories-layout">
+                {/* FORM PROMOÇÕES */}
+                <form
+                  className="admin-form admin-promo-form"
+                  onSubmit={handlePromotionSubmit}
+                >
+                  <h3>
+                    {editingPromotionId === null
+                      ? 'Nova promoção'
+                      : `Editar promoção #${editingPromotionId}`}
+                  </h3>
+
+                  <label>
+                    Produto*
+                    <div className="product-search-inline">
+                      <input
+                        type="text"
+                        placeholder="Digite Cod/CodBarras ou nome..."
+                        value={promotionProductSearch}
+                        onChange={(e) =>
+                          setPromotionProductSearch(e.target.value)
+                        }
+                        onKeyDown={handlePromotionProductKeyDown}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={runPromotionProductSearch}
+                      >
+                        Buscar
+                      </button>
+                    </div>
+                    {selectedPromotionProduct && (
+                      <small className="selected-product-hint">
+                        Selecionado:{' '}
+                        <strong>{selectedPromotionProduct.name}</strong>{' '}
+                        {selectedPromotionProduct.cod && (
+                          <> (Cod {selectedPromotionProduct.cod})</>
+                        )}
+                        {selectedPromotionProduct.codBarras && (
+                          <> • CodBarras {selectedPromotionProduct.codBarras}</>
+                        )}
                       </small>
                     )}
-                  </div>
+                  </label>
 
-                  <div className="admin-item-actions">
-                    <label className="link-button small">
-                      Imagem
+                  <label>
+                    Tipo de promoção
+                    <select
+                      name="type"
+                      value={promotionForm.type}
+                      onChange={handlePromotionChange}
+                    >
+                      <option value="percentage">Desconto (%)</option>
+                      <option value="takepay">Leve e Pague</option>
+                      <option value="above">
+                        Acima de quantidade
+                      </option>
+                    </select>
+                  </label>
+
+                  {promotionForm.type === 'percentage' && (
+                    <label>
+                      Percentual de desconto (%)
                       <input
-                        type="file"
-                        accept="image/png"
-                        style={{ display: 'none' }}
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) {
-                            handleUploadImage(p, file)
-                          }
-                          // permite escolher o mesmo arquivo novamente se quiser
-                          e.target.value = ''
-                        }}
+                        type="number"
+                        name="percent"
+                        min="0"
+                        step="0.01"
+                        value={promotionForm.percent}
+                        onChange={handlePromotionChange}
                       />
                     </label>
+                  )}
 
+                  {promotionForm.type === 'takepay' && (
+                    <div className="form-row two-columns">
+                      <label>
+                        Leva
+                        <input
+                          type="number"
+                          name="takeQty"
+                          min="1"
+                          step="1"
+                          value={promotionForm.takeQty}
+                          onChange={handlePromotionChange}
+                        />
+                      </label>
+                      <label>
+                        Paga
+                        <input
+                          type="number"
+                          name="payQty"
+                          min="1"
+                          step="1"
+                          value={promotionForm.payQty}
+                          onChange={handlePromotionChange}
+                        />
+                      </label>
+                    </div>
+                  )}
+
+                  {promotionForm.type === 'above' && (
+                    <>
+                      <label>
+                        Quantidade mínima
+                        <input
+                          type="number"
+                          name="minQty"
+                          min="1"
+                          step="1"
+                          value={promotionForm.minQty}
+                          onChange={handlePromotionChange}
+                        />
+                      </label>
+                      <label>
+                        Percentual de desconto (%)
+                        <input
+                          type="number"
+                          name="percent"
+                          min="0"
+                          step="0.01"
+                          value={promotionForm.percent}
+                          onChange={handlePromotionChange}
+                        />
+                      </label>
+                    </>
+                  )}
+
+                  <label className="checkbox-inline">
+                    <input
+                      type="checkbox"
+                      name="active"
+                      checked={promotionForm.active}
+                      onChange={handlePromotionChange}
+                    />
+                    Promoção ativa
+                  </label>
+
+                  <div className="form-row form-actions">
+                    {editingPromotionId !== null && (
+                      <button
+                        type="button"
+                        className="link-button"
+                        onClick={resetPromotionForm}
+                      >
+                        Cancelar edição
+                      </button>
+                    )}
                     <button
-                      type="button"
-                      className="link-button small"
-                      onClick={() => handleEdit(p)}
+                      type="submit"
+                      className="primary-button full"
+                      disabled={savingPromotion}
                     >
-                      Editar
+                      {savingPromotion
+                        ? editingPromotionId === null
+                          ? 'Salvando...'
+                          : 'Atualizando...'
+                        : editingPromotionId === null
+                        ? 'Salvar promoção'
+                        : 'Salvar alterações'}
                     </button>
-
-                    <button
-                      type="button"
-                      className="link-button small danger"
-                      onClick={() => handleDelete(p.id)}
-                    >
-                      Excluir
-                    </button>
-
-                    {p.featured && <span className="admin-badge">Destaque</span>}
                   </div>
-                </li>
-              ))}
-            </ul>
+                </form>
+
+                {/* LISTA DE PROMOÇÕES */}
+                <div className="admin-list admin-category-list-wrapper">
+                  <h3>Promoções cadastradas</h3>
+                  {loadingPromotions ? (
+                    <p>Carregando promoções...</p>
+                  ) : promotions.length === 0 ? (
+                    <p>Nenhuma promoção cadastrada.</p>
+                  ) : (
+                    <ul className="admin-category-list">
+                      {promotions.map((promo) => {
+                        const product = products.find(
+                          (p) => p.id === promo.productId,
+                        )
+                        return (
+                          <li
+                            key={promo.id}
+                            className="admin-category-item"
+                          >
+                            <div>
+                              <strong>
+                                {product?.name || 'Produto removido'}
+                              </strong>
+                              <p className="admin-category-desc">
+                                {describePromotion(promo)}
+                              </p>
+                              <small>
+                                Cod promoção: {promo.cod || promo.id} •{' '}
+                                {promo.active ? 'Ativa' : 'Inativa'}
+                              </small>
+                            </div>
+                            <div className="admin-item-actions">
+                              <button
+                                type="button"
+                                className="link-button small"
+                                onClick={() =>
+                                  handleEditPromotion(promo)
+                                }
+                              >
+                                Editar
+                              </button>
+                              <button
+                                type="button"
+                                className="link-button small danger"
+                                onClick={() =>
+                                  handleDeletePromotion(promo.id)
+                                }
+                              >
+                                Excluir
+                              </button>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {productSearchModalOpen && (
+            <div className="modal-overlay">
+              <div className="modal promo-product-modal">
+                <div className="modal-header">
+                  <h3>Buscar produto</h3>
+                  <button
+                    type="button"
+                    className="modal-close"
+                    onClick={closeProductSearchModal}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="modal-body">
+                  <input
+                    type="text"
+                    className="promo-product-search-input"
+                    placeholder="Digite parte do nome do produto"
+                    value={productNameQuery}
+                    onChange={handleProductNameQueryChange}
+                  />
+                  <div className="promo-product-results">
+                    {productNameResults.length === 0 ? (
+                      <p>Nenhum produto encontrado.</p>
+                    ) : (
+                      <ul className="promo-product-list">
+                        {productNameResults.map((p) => (
+                          <li
+                            key={p.id}
+                            className="promo-product-item"
+                            onClick={() => selectPromotionProduct(p)}
+                          >
+                            <strong>{p.name}</strong>
+                            <div className="promo-product-meta">
+                              <span>Cod: {p.cod || p.id}</span>
+                              {p.codBarras && (
+                                <span> • CodBarras: {p.codBarras}</span>
+                              )}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>

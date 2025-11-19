@@ -27,6 +27,12 @@ const {
   updateCategory,
   deleteCategory,
 } = require('./categoriesStore')
+const {
+  getPromotions,
+  addPromotion,
+  updatePromotion,
+  deletePromotion,
+} = require('./promotionsStore')
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -247,7 +253,7 @@ app.get('/product-image/:codBarras', (req, res) => {
   return res.sendFile(imgPath)
 })
 
-// ================== CATEGORIAS ==================
+// ================== CATEGORIAS (Categoria + Subcategoria) ==================
 
 // LISTAR CATEGORIAS (público)
 app.get('/api/categories', async (req, res) => {
@@ -260,16 +266,38 @@ app.get('/api/categories', async (req, res) => {
   }
 })
 
-// CRIAR CATEGORIA (somente admin)
+// CRIAR CATEGORIA / SUBCATEGORIA (somente admin)
 app.post('/api/categories', authMiddleware, async (req, res) => {
-  const { name, description } = req.body
+  const { name, description, parentId } = req.body
 
   if (!name) {
     return res.status(400).json({ message: 'Nome da categoria é obrigatório.' })
   }
 
   try {
-    const newCategory = await addCategory({ name, description })
+    let parent = null
+    let parsedParentId = null
+
+    if (parentId !== undefined && parentId !== null && parentId !== '') {
+      parsedParentId = Number(parentId)
+      const categories = await getCategories()
+      parent = categories.find(
+        (c) =>
+          Number(c.id) === parsedParentId || Number(c.cod) === parsedParentId,
+      )
+      if (!parent) {
+        return res
+          .status(400)
+          .json({ message: 'Categoria pai não encontrada.' })
+      }
+    }
+
+    const newCategory = await addCategory({
+      name,
+      description,
+      parentId: parsedParentId,
+    })
+
     return res.status(201).json(newCategory)
   } catch (err) {
     console.error('Erro ao criar categoria:', err)
@@ -277,16 +305,37 @@ app.post('/api/categories', authMiddleware, async (req, res) => {
   }
 })
 
-// ATUALIZAR CATEGORIA (somente admin)
+// ATUALIZAR CATEGORIA / SUBCATEGORIA (somente admin)
 app.put('/api/categories/:id', authMiddleware, async (req, res) => {
   const { id } = req.params
-  const { name, description } = req.body
+  const { name, description, parentId } = req.body
 
   try {
-    const updated = await updateCategory(id, { name, description })
+    let parsedParentId = null
+    if (parentId !== undefined && parentId !== null && parentId !== '') {
+      parsedParentId = Number(parentId)
+      const categories = await getCategories()
+      const parent = categories.find(
+        (c) =>
+          Number(c.id) === parsedParentId || Number(c.cod) === parsedParentId,
+      )
+      if (!parent) {
+        return res
+          .status(400)
+          .json({ message: 'Categoria pai não encontrada.' })
+      }
+    }
+
+    const updated = await updateCategory(id, {
+      name,
+      description,
+      parentId: parentId === '' ? null : parsedParentId,
+    })
+
     if (!updated) {
       return res.status(404).json({ message: 'Categoria não encontrada.' })
     }
+
     return res.json(updated)
   } catch (err) {
     console.error('Erro ao atualizar categoria:', err)
@@ -303,10 +352,149 @@ app.delete('/api/categories/:id', authMiddleware, async (req, res) => {
     if (!removed) {
       return res.status(404).json({ message: 'Categoria não encontrada.' })
     }
-    return res.json({ message: 'Categoria excluída com sucesso.' })
+
+    return res.json({ message: 'Categoria (e subcategorias) excluída.' })
   } catch (err) {
     console.error('Erro ao excluir categoria:', err)
     return res.status(500).json({ message: 'Erro ao excluir categoria.' })
+  }
+})
+
+// ================== PROMOÇÕES ==================
+
+// LISTAR PROMOÇÕES (público por enquanto)
+app.get('/api/promotions', async (req, res) => {
+  try {
+    const promotions = await getPromotions()
+    return res.json(promotions)
+  } catch (err) {
+    console.error('Erro ao listar promoções:', err)
+    return res.status(500).json({ message: 'Erro ao listar promoções.' })
+  }
+})
+
+// CRIAR PROMOÇÃO (somente admin)
+app.post('/api/promotions', authMiddleware, async (req, res) => {
+  const { productId, type, percent, takeQty, payQty, minQty, active } = req.body
+
+  if (!productId || !type) {
+    return res
+      .status(400)
+      .json({ message: 'Produto e tipo de promoção são obrigatórios.' })
+  }
+
+  const numericProductId = Number(productId)
+
+  try {
+    // valida se o produto existe
+    const products = await getProducts()
+    const product = products.find(
+      (p) =>
+        Number(p.id) === numericProductId || Number(p.cod) === numericProductId,
+    )
+
+    if (!product) {
+      return res.status(400).json({ message: 'Produto não encontrado.' })
+    }
+
+    // validações por tipo
+    if (type === 'percentage') {
+      if (percent === undefined || percent === null || percent === '') {
+        return res
+          .status(400)
+          .json({ message: 'Percentual de desconto é obrigatório.' })
+      }
+    }
+
+    if (type === 'takepay') {
+      if (!takeQty || !payQty) {
+        return res.status(400).json({
+          message: 'Quantidade de levar e pagar são obrigatórias.',
+        })
+      }
+    }
+
+    if (type === 'above') {
+      if (!minQty || !percent) {
+        return res.status(400).json({
+          message:
+            'Quantidade mínima e percentual de desconto são obrigatórios.',
+        })
+      }
+    }
+
+    const newPromotion = await addPromotion({
+      productId: numericProductId,
+      type,
+      percent,
+      takeQty,
+      payQty,
+      minQty,
+      active,
+    })
+
+    return res.status(201).json(newPromotion)
+  } catch (err) {
+    console.error('Erro ao criar promoção:', err)
+    return res.status(500).json({ message: 'Erro ao criar promoção.' })
+  }
+})
+
+// ATUALIZAR PROMOÇÃO (somente admin)
+app.put('/api/promotions/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params
+  const { productId, type, percent, takeQty, payQty, minQty, active } = req.body
+
+  try {
+    let numericProductId = null
+    if (productId) {
+      numericProductId = Number(productId)
+      const products = await getProducts()
+      const product = products.find(
+        (p) =>
+          Number(p.id) === numericProductId ||
+          Number(p.cod) === numericProductId,
+      )
+      if (!product) {
+        return res.status(400).json({ message: 'Produto não encontrado.' })
+      }
+    }
+
+    const updated = await updatePromotion(id, {
+      productId: numericProductId ?? undefined,
+      type,
+      percent,
+      takeQty,
+      payQty,
+      minQty,
+      active,
+    })
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Promoção não encontrada.' })
+    }
+
+    return res.json(updated)
+  } catch (err) {
+    console.error('Erro ao atualizar promoção:', err)
+    return res.status(500).json({ message: 'Erro ao atualizar promoção.' })
+  }
+})
+
+// EXCLUIR PROMOÇÃO (somente admin)
+app.delete('/api/promotions/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const removed = await deletePromotion(id)
+    if (!removed) {
+      return res.status(404).json({ message: 'Promoção não encontrada.' })
+    }
+
+    return res.json({ message: 'Promoção excluída com sucesso.' })
+  } catch (err) {
+    console.error('Erro ao excluir promoção:', err)
+    return res.status(500).json({ message: 'Erro ao excluir promoção.' })
   }
 })
 
