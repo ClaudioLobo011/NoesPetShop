@@ -1,0 +1,42 @@
+export const featuredProducts = [
+  {
+    id: 1,
+    name: 'Ração Premium Cães Adultos 10kg',
+    description: 'Ração completa para cães adultos de todas as raças.',
+    price: 189.9,
+    category: 'Cães',
+    subcategory: 'Rações',
+  },
+  {
+    id: 2,
+    name: 'Ração Premium Gatos Adultos 5kg',
+    description: 'Nutrição balanceada para gatos adultos.',
+    price: 129.9,
+    category: 'Gatos',
+    subcategory: 'Rações',
+  },
+  {
+    id: 3,
+    name: 'Shampoo Neutro para Pets 500ml',
+    description: 'Ideal para banho e tosa com perfume suave.',
+    price: 39.9,
+    category: 'Higiene',
+    subcategory: 'Banho & Tosa',
+  },
+  {
+    id: 4,
+    name: 'Coleira Confortável Ajustável',
+    description: 'Coleira acolchoada para máximo conforto.',
+    price: 49.9,
+    category: 'Acessórios',
+    subcategory: 'Coleiras',
+  },
+  {
+    id: 5,
+    name: 'Brinquedo Bola Interativa',
+    description: 'Ajuda a reduzir o estresse e o tédio do pet.',
+    price: 29.9,
+    category: 'Brinquedos',
+    subcategory: 'Interativos',
+  },
+]
