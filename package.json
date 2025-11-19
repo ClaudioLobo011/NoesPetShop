@@ -8,12 +8,32 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "imask": "^7.6.0",
+    "jsonwebtoken": "^9.0.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "imask": "^7.6.0"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",
     "vite": "^6.0.5"
-  }
+  },
+  "description": "Projeto em React + Vite para o site do Noe's PetShop.",
+  "main": "vite.config.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ClaudioLobo011/NoesPetShop.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ClaudioLobo011/NoesPetShop/issues"
+  },
+  "homepage": "https://github.com/ClaudioLobo011/NoesPetShop#readme"
 }

@@ -1,0 +1,26 @@
+[
+  {
+    "id": 1,
+    "name": "Teste",
+    "description": "Teste",
+    "price": 169.9,
+    "category": "Rações",
+    "subcategory": "",
+    "featured": true,
+    "createdAt": "2025-11-19T20:50:27.712Z",
+    "codBarras": "797897987",
+    "updatedAt": "2025-11-19T21:08:50.178Z"
+  },
+  {
+    "id": 2,
+    "cod": 2,
+    "codBarras": "",
+    "name": "Gabriel",
+    "description": "sdasd",
+    "price": 125.9,
+    "category": "Rações",
+    "subcategory": "",
+    "featured": true,
+    "createdAt": "2025-11-19T20:57:53.438Z"
+  }
+]

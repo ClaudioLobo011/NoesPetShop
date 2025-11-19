@@ -1,14 +1,32 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useCart } from '../context/CartContext'
+import { API_URL } from '../config/apiConfig'
 
 function ProductCard({ product }) {
   const { addToCart } = useCart()
+  const [imgError, setImgError] = useState(false)
+
+  const imageUrl =
+    product.codBarras && !imgError
+      ? `${API_URL}/product-image/${product.codBarras}`
+      : null
 
   return (
     <div className="product-card">
-      <div className="product-image-placeholder">
-        <span>Imagem do produto</span>
-      </div>
+      {imageUrl ? (
+        <div className="product-image-wrapper">
+          <img
+            src={imageUrl}
+            alt={product.name}
+            onError={() => setImgError(true)}
+          />
+        </div>
+      ) : (
+        <div className="product-image-placeholder">
+          <span>Imagem do produto</span>
+        </div>
+      )}
+
       <h3>{product.name}</h3>
       <p className="product-description">{product.description}</p>
       <p className="product-price">

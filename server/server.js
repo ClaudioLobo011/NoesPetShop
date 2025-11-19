@@ -1,0 +1,323 @@
+const express = require('express')
+const cors = require('cors')
+const cookieParser = require('cookie-parser')
+const dotenv = require('dotenv')
+const path = require('path')
+const fs = require('fs')
+const multer = require('multer')
+
+dotenv.config()
+
+const { validateAdmin, signAdminToken, authMiddleware } = require('./auth')
+
+
+
+const app = express()
+const PORT = process.env.PORT || 4000
+const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
+const {
+  getProducts,
+  addProduct,
+  updateProduct,
+  deleteProduct,
+} = require('./productsStore')
+const {
+  getCategories,
+  addCategory,
+  updateCategory,
+  deleteCategory,
+} = require('./categoriesStore')
+
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const codBarras = req.body.codBarras
+      if (!codBarras) {
+        return cb(new Error('codBarras é obrigatório para upload de imagem.'))
+      }
+      const dir = path.join(__dirname, 'data', 'product_image', codBarras)
+      fs.mkdirSync(dir, { recursive: true })
+      cb(null, dir)
+    },
+    filename: (req, file, cb) => {
+      const codBarras = req.body.codBarras
+      // vamos sempre salvar como .png (e pedir PNG no painel)
+      cb(null, `${codBarras}.png`)
+    },
+  }),
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype !== 'image/png') {
+      return cb(new Error('A imagem deve ser PNG.'))
+    }
+    cb(null, true)
+  },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+})
+
+app.use(cors({
+  origin: CLIENT_URL,
+  credentials: true,
+}))
+app.use(express.json())
+app.use(cookieParser())
+
+// LOGIN ADMIN
+app.post('/api/admin/login', async (req, res) => {
+  const { email, password } = req.body
+
+  if (!email || !password) {
+    return res.status(400).json({ message: 'Informe e-mail e senha.' })
+  }
+
+  try {
+    const valid = await validateAdmin(email, password)
+    if (!valid) {
+      return res.status(401).json({ message: 'Credenciais inválidas.' })
+    }
+
+    const token = signAdminToken({ email })
+
+    res.cookie('admin_token', token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: false, // EM PRODUÇÃO COM HTTPS -> true
+      maxAge: 8 * 60 * 60 * 1000, // 8 horas
+    })
+
+    return res.json({ message: 'Login realizado com sucesso.' })
+  } catch (err) {
+    console.error(err)
+    return res.status(500).json({ message: 'Erro ao efetuar login.' })
+  }
+})
+
+// LOGOUT
+app.post('/api/admin/logout', (req, res) => {
+  res.clearCookie('admin_token')
+  return res.json({ message: 'Logout efetuado.' })
+})
+
+// CHECAR SE ESTÁ LOGADO
+app.get('/api/admin/me', authMiddleware, (req, res) => {
+  return res.json({ email: req.admin.email })
+})
+
+// LISTAR PRODUTOS (público)
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await getProducts()
+    return res.json(products)
+  } catch (err) {
+    console.error('Erro ao listar produtos:', err)
+    return res.status(500).json({ message: 'Erro ao listar produtos.' })
+  }
+})
+
+// CRIAR PRODUTO (somente admin)
+app.post('/api/products', authMiddleware, async (req, res) => {
+  const { name, description, price, category, subcategory, featured, codBarras } =
+    req.body
+
+  if (!name || price === undefined || price === null) {
+    return res
+      .status(400)
+      .json({ message: 'Nome e preço são obrigatórios.' })
+  }
+
+  try {
+    const newProduct = await addProduct({
+      name,
+      description,
+      price,
+      category,
+      subcategory,
+      featured,
+      codBarras,
+    })
+
+    return res.status(201).json(newProduct)
+  } catch (err) {
+    console.error('Erro ao criar produto:', err)
+    return res.status(500).json({ message: 'Erro ao criar produto.' })
+  }
+})
+
+// ATUALIZAR PRODUTO (somente admin)
+app.put('/api/products/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params
+  const { name, description, price, category, subcategory, featured, codBarras } =
+    req.body
+
+  try {
+    const updated = await updateProduct(id, {
+      name,
+      description,
+      price,
+      category,
+      subcategory,
+      featured,
+      codBarras,
+    })
+
+    if (!updated) {
+      return res.status(404).json({ message: 'Produto não encontrado.' })
+    }
+
+    return res.json(updated)
+  } catch (err) {
+    console.error('Erro ao atualizar produto:', err)
+    return res.status(500).json({ message: 'Erro ao atualizar produto.' })
+  }
+})
+
+// EXCLUIR PRODUTO (somente admin)
+app.delete('/api/products/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const removed = await deleteProduct(id)
+    if (!removed) {
+      return res.status(404).json({ message: 'Produto não encontrado.' })
+    }
+
+    return res.json({ message: 'Produto excluído com sucesso.' })
+  } catch (err) {
+    console.error('Erro ao excluir produto:', err)
+    return res.status(500).json({ message: 'Erro ao excluir produto.' })
+  }
+})
+
+// UPLOAD DE IMAGEM DO PRODUTO (somente admin)
+app.post(
+  '/api/products/:id/image',
+  authMiddleware,
+  upload.single('image'),
+  async (req, res) => {
+    const { id } = req.params
+    const { codBarras } = req.body
+
+    if (!codBarras) {
+      return res
+        .status(400)
+        .json({ message: 'codBarras é obrigatório para upload da imagem.' })
+    }
+
+    // opcional: validar se o produto existe
+    try {
+      const products = await getProducts()
+      const numericId = Number(id)
+      const product = products.find(
+        (p) => Number(p.id) === numericId || Number(p.cod) === numericId,
+      )
+
+      if (!product) {
+        return res.status(404).json({ message: 'Produto não encontrado.' })
+      }
+
+      if (product.codBarras !== codBarras) {
+        return res.status(400).json({
+          message:
+            'codBarras do formulário não confere com o codBarras do produto.',
+        })
+      }
+    } catch (err) {
+      console.error('Erro ao validar produto no upload de imagem:', err)
+      return res.status(500).json({ message: 'Erro ao validar produto.' })
+    }
+
+    const imageUrl = `/product-image/${codBarras}`
+
+    return res.json({
+      message: 'Imagem enviada com sucesso.',
+      imageUrl,
+    })
+  },
+)
+
+// SERVIR IMAGEM DO PRODUTO POR CODBARRAS
+app.get('/product-image/:codBarras', (req, res) => {
+  const { codBarras } = req.params
+  const dir = path.join(__dirname, 'data', 'product_image', codBarras)
+  const imgPath = path.join(dir, `${codBarras}.png`)
+
+  if (!fs.existsSync(imgPath)) {
+    return res.status(404).send('Imagem não encontrada.')
+  }
+
+  return res.sendFile(imgPath)
+})
+
+// ================== CATEGORIAS ==================
+
+// LISTAR CATEGORIAS (público)
+app.get('/api/categories', async (req, res) => {
+  try {
+    const categories = await getCategories()
+    return res.json(categories)
+  } catch (err) {
+    console.error('Erro ao listar categorias:', err)
+    return res.status(500).json({ message: 'Erro ao listar categorias.' })
+  }
+})
+
+// CRIAR CATEGORIA (somente admin)
+app.post('/api/categories', authMiddleware, async (req, res) => {
+  const { name, description } = req.body
+
+  if (!name) {
+    return res.status(400).json({ message: 'Nome da categoria é obrigatório.' })
+  }
+
+  try {
+    const newCategory = await addCategory({ name, description })
+    return res.status(201).json(newCategory)
+  } catch (err) {
+    console.error('Erro ao criar categoria:', err)
+    return res.status(500).json({ message: 'Erro ao criar categoria.' })
+  }
+})
+
+// ATUALIZAR CATEGORIA (somente admin)
+app.put('/api/categories/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params
+  const { name, description } = req.body
+
+  try {
+    const updated = await updateCategory(id, { name, description })
+    if (!updated) {
+      return res.status(404).json({ message: 'Categoria não encontrada.' })
+    }
+    return res.json(updated)
+  } catch (err) {
+    console.error('Erro ao atualizar categoria:', err)
+    return res.status(500).json({ message: 'Erro ao atualizar categoria.' })
+  }
+})
+
+// EXCLUIR CATEGORIA (somente admin)
+app.delete('/api/categories/:id', authMiddleware, async (req, res) => {
+  const { id } = req.params
+
+  try {
+    const removed = await deleteCategory(id)
+    if (!removed) {
+      return res.status(404).json({ message: 'Categoria não encontrada.' })
+    }
+    return res.json({ message: 'Categoria excluída com sucesso.' })
+  } catch (err) {
+    console.error('Erro ao excluir categoria:', err)
+    return res.status(500).json({ message: 'Erro ao excluir categoria.' })
+  }
+})
+
+// EXEMPLO DE ROTA PROTEGIDA
+app.get('/api/admin/secret', authMiddleware, (req, res) => {
+  return res.json({
+    message: 'Você é admin e está vendo uma rota protegida.',
+  })
+})
+
+app.listen(PORT, () => {
+  console.log(`API Noe's PetShop rodando na porta ${PORT}`)
+  console.log(`Frontend esperado em: ${CLIENT_URL}`)
+})

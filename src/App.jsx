@@ -1,22 +1,31 @@
-import React from 'react'
+import React, { useState } from 'react'
 import Header from './components/Header'
 import Footer from './components/Footer'
 import Home from './pages/Home'
+import AdminPage from './pages/Admin'
 import Cart from './components/Cart'
 import { CartProvider } from './context/CartContext'
+import { AuthProvider } from './context/AuthContext'
 
 function App() {
+  const [currentPage, setCurrentPage] = useState('home') // 'home' | 'admin'
+
   return (
-    <CartProvider>
-      <div className="app">
-        <Header />
-        <Cart />
-        <main className="main-content">
-          <Home />
-        </main>
-        <Footer />
-      </div>
-    </CartProvider>
+    <AuthProvider>
+      <CartProvider>
+        <div className="app">
+          <Header
+            onGoToAdmin={() => setCurrentPage('admin')}
+            onGoToHome={() => setCurrentPage('home')}
+          />
+          <Cart />
+          <main className="main-content">
+            {currentPage === 'home' ? <Home /> : <AdminPage />}
+          </main>
+          <Footer />
+        </div>
+      </CartProvider>
+    </AuthProvider>
   )
 }
 
