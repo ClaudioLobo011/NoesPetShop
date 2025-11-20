@@ -11,21 +11,21 @@ function Footer() {
 
       <div className="footer-section">
         <h4>Contato</h4>
-        <p>Telefone: (21) 0000-0000</p>
+        <p>Telefone: (21) 99332-8054</p>
         <p>E-mail: contato@noespetshop.com.br</p>
-        <p>Endereço: Rua Exemplo, 123 - Bairro - Cidade/RJ</p>
+        <p>Endereço: R. Antônio João Mendonça, 1424 - Centro Nilópolis, Rio de Janeiro</p>
       </div>
 
       <div className="footer-section">
         <h4>Redes sociais</h4>
         <ul className="social-list">
           <li>
-            <a href="#" target="_blank" rel="noreferrer">
+            <a href="https://www.instagram.com/noespetshop/" target="_blank" rel="noreferrer">
               Instagram
             </a>
           </li>
           <li>
-            <a href="#" target="_blank" rel="noreferrer">
+            <a href="https://www.facebook.com/doggybrasilcariocarj/" target="_blank" rel="noreferrer">
               Facebook
             </a>
           </li>
