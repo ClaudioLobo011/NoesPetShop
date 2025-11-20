@@ -83,11 +83,13 @@ app.post('/api/admin/login', async (req, res) => {
 
     const token = signAdminToken({ email })
 
+    const isProduction = process.env.NODE_ENV === 'production'
+
     res.cookie('admin_token', token, {
       httpOnly: true,
-      sameSite: 'lax',
-      secure: false, // EM PRODUÇÃO COM HTTPS -> true
-      maxAge: 8 * 60 * 60 * 1000, // 8 horas
+      sameSite: isProduction ? 'none' : 'lax',
+      secure: isProduction,
+      maxAge: 8 * 60 * 60 * 1000,
     })
 
     return res.json({ message: 'Login realizado com sucesso.' })
