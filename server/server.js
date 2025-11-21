@@ -14,7 +14,9 @@ const { validateAdmin, signAdminToken, authMiddleware } = require('./auth')
 
 const app = express()
 const PORT = process.env.PORT || 4000
-const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:5173'
+const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:5173')
+  .trim()
+  .replace(/\/+$/, '')
 const {
   getProducts,
   addProduct,
