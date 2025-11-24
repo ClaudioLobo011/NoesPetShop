@@ -6,6 +6,8 @@ const path = require('path')
 const fs = require('fs')
 const multer = require('multer')
 
+const placeholderSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Imagem de produto não disponível"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#f3f4f6"/><stop offset="100%" stop-color="#e5e7eb"/></linearGradient></defs><rect width="200" height="200" fill="url(#g)"/><circle cx="100" cy="80" r="34" fill="#d1d5db"/><rect x="40" y="126" width="120" height="36" rx="8" fill="#d1d5db"/><path d="M70 134c8-10 16-16 30-16s22 6 30 16" stroke="#9ca3af" stroke-width="6" stroke-linecap="round" fill="none"/></svg>`
+
 dotenv.config()
 
 const { validateAdmin, signAdminToken, authMiddleware } = require('./auth')
@@ -251,7 +253,8 @@ app.get('/product-image/:codBarras', (req, res) => {
   const imgPath = path.join(dir, `${codBarras}.png`)
 
   if (!fs.existsSync(imgPath)) {
-    return res.status(404).send('Imagem não encontrada.')
+    res.type('image/svg+xml')
+    return res.send(placeholderSvg)
   }
 
   return res.sendFile(imgPath)

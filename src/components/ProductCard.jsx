@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { useCart } from '../context/CartContext'
 import { API_URL } from '../config/apiConfig'
+import placeholderImage from '../assets/logo2.png'
 
 function describePromotionShort(promo) {
   if (!promo) return ''
@@ -49,6 +50,8 @@ function ProductCard({ product }) {
       ? `${API_URL}/product-image/${product.codBarras}`
       : null
 
+  const displayImage = imageUrl || placeholderImage
+
   const promotion = useMemo(
     () => getBestPromotionForProduct(product, promotions),
     [product.id, promotions],
@@ -65,15 +68,13 @@ function ProductCard({ product }) {
   return (
     <div className="product-card">
       <div className="product-image-placeholder">
-        {imageUrl && !imgError ? (
-          <img
-            src={imageUrl}
-            alt={product.name}
-            onError={() => setImgError(true)}
-          />
-        ) : (
-          <span>Imagem do produto</span>
-        )}
+        <img
+          src={displayImage}
+          alt={imageUrl ? product.name : 'Imagem não disponível'}
+          onError={() => {
+            if (!imgError) setImgError(true)
+          }}
+        />
 
         {promotion && (
           <span className="product-badge">
