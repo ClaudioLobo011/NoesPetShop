@@ -94,6 +94,11 @@ function AdminPage() {
     setSuccess('')
   }
 
+  function getProductId(product) {
+    if (!product) return ''
+    return product.id ?? product.cod ?? product._id ?? ''
+  }
+
   async function fetchProducts() {
     setLoadingProducts(true)
     clearMessages()
@@ -388,7 +393,7 @@ function AdminPage() {
     setSelectedPromotionProduct(product)
     setPromotionForm((prev) => ({
       ...prev,
-      productId: product.id ? String(product.id) : '',
+      productId: getProductId(product) ? String(getProductId(product)) : '',
     }))
     setProductSearchModalOpen(false)
     setPromotionProductSearch('')
@@ -527,8 +532,9 @@ function AdminPage() {
           throw new Error(data.message || 'Erro ao atualizar produto.')
         }
 
+        const updatedId = getProductId(data)
         setProducts((prev) =>
-          prev.map((p) => (p.id === data.id ? data : p)),
+          prev.map((p) => (getProductId(p) === updatedId ? data : p)),
         )
         resetProductForm()
         setSuccess('Produto atualizado com sucesso.')
@@ -542,7 +548,7 @@ function AdminPage() {
   }
 
   function handleEditProduct(product) {
-    setEditingProductId(product.id)
+    setEditingProductId(getProductId(product))
     setProductForm({
       name: product.name || '',
       description: product.description || '',
@@ -573,7 +579,7 @@ function AdminPage() {
         throw new Error(data.message || 'Erro ao excluir produto.')
       }
 
-      setProducts((prev) => prev.filter((p) => p.id !== id))
+      setProducts((prev) => prev.filter((p) => getProductId(p) !== id))
       if (editingProductId === id) resetProductForm()
       setSuccess('Produto excluído com sucesso.')
     } catch (err) {
@@ -597,7 +603,7 @@ function AdminPage() {
     try {
       clearMessages()
       const res = await fetch(
-        `${API_URL}/api/products/${product.id}/image`,
+        `${API_URL}/api/products/${getProductId(product)}/image`,
         {
           method: 'POST',
           credentials: 'include',
@@ -634,8 +640,10 @@ function AdminPage() {
   }, [products, searchTerm])
 
   function mapProductToBulkRow(product) {
+    const rowId = product.id ?? product.cod ?? product._id
+
     return {
-      id: product.id,
+      id: rowId,
       cod: product.cod,
       name: product.name || '',
       description: product.description || '',
@@ -784,7 +792,13 @@ function AdminPage() {
   }
 
   async function submitBulkRow(row, parsedPrice, parsedCost) {
-    const res = await fetch(`${API_URL}/api/products/${row.id}`, {
+    const productId = getProductId(row)
+
+    if (!productId) {
+      throw new Error('Produto sem identificador válido para salvar.')
+    }
+
+    const res = await fetch(`${API_URL}/api/products/${productId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -805,9 +819,14 @@ function AdminPage() {
       throw new Error(data.message || 'Erro ao salvar alterações em massa.')
     }
 
-    setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+    const updatedId = getProductId(data)
+    setProducts((prev) =>
+      prev.map((p) => (getProductId(p) === updatedId ? data : p)),
+    )
     setBulkRows((prev) =>
-      prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
+      prev.map((r) =>
+        getProductId(r) === updatedId ? mapProductToBulkRow(data) : r,
+      ),
     )
   }
 
@@ -1306,7 +1325,7 @@ function AdminPage() {
                           <button
                             type="button"
                             className="link-button small danger"
-                            onClick={() => handleDeleteProduct(p.id)}
+                            onClick={() => handleDeleteProduct(getProductId(p))}
                           >
                             Excluir
                           </button>

@@ -1,4 +1,25 @@
+const { ObjectId } = require('mongodb')
+
 const { getCollection } = require('./db')
+
+function buildProductQuery(id) {
+  const or = []
+  const numericId = Number(id)
+
+  if (Number.isFinite(numericId)) {
+    or.push({ id: numericId }, { cod: numericId })
+  }
+
+  if (id !== undefined && id !== null) {
+    or.push({ id }, { cod: id })
+  }
+
+  if (ObjectId.isValid(id)) {
+    or.push({ _id: new ObjectId(id) })
+  }
+
+  return or.length ? { $or: or } : null
+}
 
 function serialize(doc) {
   if (!doc) return null
@@ -44,7 +65,9 @@ async function addProduct(product) {
 
 async function updateProduct(id, updates) {
   const collection = await getCollection('products')
-  const numericId = Number(id)
+  const query = buildProductQuery(id)
+
+  if (!query) return null
 
   const updateData = {
     ...(updates.name !== undefined ? { name: updates.name } : {}),
@@ -73,20 +96,18 @@ async function updateProduct(id, updates) {
     updatedAt: new Date().toISOString(),
   }
 
-  const result = await collection.findOneAndUpdate(
-    { $or: [{ id: numericId }, { cod: numericId }] },
-    { $set: updateData },
-    { returnDocument: 'after' },
-  )
+  const result = await collection.findOneAndUpdate(query, { $set: updateData }, { returnDocument: 'after' })
 
   return serialize(result.value)
 }
 
 async function deleteProduct(id) {
   const collection = await getCollection('products')
-  const numericId = Number(id)
+  const query = buildProductQuery(id)
 
-  const result = await collection.deleteOne({ $or: [{ id: numericId }, { cod: numericId }] })
+  if (!query) return false
+
+  const result = await collection.deleteOne(query)
   return result.deletedCount > 0
 }
 
