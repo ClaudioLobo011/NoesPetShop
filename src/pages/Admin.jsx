@@ -6,7 +6,7 @@ import { API_URL } from '../config/apiConfig'
 function AdminPage() {
   const { adminUser, checking, logout } = useAuth()
 
-  const [activeSection, setActiveSection] = useState('products') // 'products' | 'import' | 'categories' | 'promotions'
+  const [activeSection, setActiveSection] = useState('products') // 'products' | 'import' | 'categories' | 'promotions' | 'bulkEdit'
 
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
@@ -28,6 +28,12 @@ function AdminPage() {
     featured: true,
     codBarras: '',
   })
+
+  // ---- ALTERAÇÃO EM MASSA ----
+  const [bulkRows, setBulkRows] = useState([])
+  const [bulkSavingIds, setBulkSavingIds] = useState(() => new Set())
+  const [bulkNameFilter, setBulkNameFilter] = useState('')
+  const [bulkSortOrder, setBulkSortOrder] = useState('asc')
 
   // ---- CATEGORIAS ----
   const [categories, setCategories] = useState([])
@@ -574,7 +580,7 @@ function AdminPage() {
     }
   }
 
-  async function handleUploadImage(product, file) {
+  async function handleUploadImage(product, file, onUploaded) {
     if (!file) return
 
     if (!product.codBarras) {
@@ -601,6 +607,9 @@ function AdminPage() {
         throw new Error(data.message || 'Erro ao enviar imagem.')
       }
       setSuccess('Imagem enviada com sucesso.')
+      if (typeof onUploaded === 'function') {
+        onUploaded(data.imageUrl)
+      }
     } catch (err) {
       console.error(err)
       setError(err.message)
@@ -621,6 +630,138 @@ function AdminPage() {
       )
     })
   }, [products, searchTerm])
+
+  function mapProductToBulkRow(product) {
+    return {
+      id: product.id,
+      cod: product.cod,
+      name: product.name || '',
+      description: product.description || '',
+      costPrice:
+        product.costPrice !== undefined && product.costPrice !== null
+          ? String(product.costPrice).replace(',', '.')
+          : '',
+      price:
+        typeof product.price === 'number'
+          ? product.price.toString().replace(',', '.')
+          : product.price || '',
+      category: product.category || '',
+      subcategory: product.subcategory || '',
+      featured: product.featured !== false,
+      codBarras: product.codBarras || '',
+      hasImage: Boolean(product.imageUrl),
+    }
+  }
+
+  useEffect(() => {
+    setBulkRows(products.map(mapProductToBulkRow))
+  }, [products])
+
+  const filteredBulkRows = useMemo(() => {
+    const term = bulkNameFilter.trim().toLowerCase()
+    const rows = term
+      ? bulkRows.filter((row) => (row.name || '').toLowerCase().includes(term))
+      : bulkRows
+
+    const sorted = [...rows].sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase()
+      const nameB = (b.name || '').toLowerCase()
+
+      if (nameA === nameB) return 0
+      if (bulkSortOrder === 'desc') {
+        return nameA < nameB ? 1 : -1
+      }
+      return nameA > nameB ? 1 : -1
+    })
+
+    return sorted
+  }, [bulkRows, bulkNameFilter, bulkSortOrder])
+
+  function handleBulkChange(id, field, value) {
+    setBulkRows((prev) =>
+      prev.map((row) =>
+        row.id === id
+          ? {
+              ...row,
+              [field]: field === 'featured' ? value : value,
+            }
+          : row,
+      ),
+    )
+  }
+
+  function toggleBulkSaving(id, saving) {
+    setBulkSavingIds((prev) => {
+      const next = new Set(prev)
+      if (saving) {
+        next.add(id)
+      } else {
+        next.delete(id)
+      }
+      return next
+    })
+  }
+
+  async function handleBulkSave(row) {
+    clearMessages()
+
+    const parsedPrice = Number(String(row.price).replace(',', '.'))
+    const parsedCost =
+      row.costPrice === '' || row.costPrice === null
+        ? null
+        : Number(String(row.costPrice).replace(',', '.'))
+
+    if (!row.name) {
+      setError('Nome é obrigatório na alteração em massa.')
+      return
+    }
+
+    if (!Number.isFinite(parsedPrice)) {
+      setError('Informe um preço válido para salvar a linha.')
+      return
+    }
+
+    if (row.costPrice !== '' && row.costPrice !== null && !Number.isFinite(parsedCost)) {
+      setError('Informe um custo válido ou deixe em branco.')
+      return
+    }
+
+    toggleBulkSaving(row.id, true)
+
+    try {
+      const res = await fetch(`${API_URL}/api/products/${row.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: row.name,
+          description: row.description,
+          price: parsedPrice,
+          category: row.category,
+          subcategory: row.subcategory,
+          costPrice: parsedCost,
+          featured: !!row.featured,
+          codBarras: row.codBarras,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+      }
+
+      setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+      setBulkRows((prev) =>
+        prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
+      )
+      setSuccess('Linha atualizada com sucesso.')
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      toggleBulkSaving(row.id, false)
+    }
+  }
 
   // ===== CATEGORIAS =====
 
@@ -819,6 +960,21 @@ function AdminPage() {
             }}
           >
             Importar Produtos
+          </button>
+
+          <button
+            type="button"
+            className={
+              activeSection === 'bulkEdit'
+                ? 'admin-sidebar-btn active'
+                : 'admin-sidebar-btn'
+            }
+            onClick={() => {
+              setActiveSection('bulkEdit')
+              clearMessages()
+            }}
+          >
+            Alteração em Massa
           </button>
 
           <button
@@ -1301,6 +1457,251 @@ function AdminPage() {
                       })}
                     </ul>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'bulkEdit' && (
+            <div className="admin-bulk">
+              <div className="bulk-edit-wrapper">
+                <div className="admin-form bulk-edit-intro">
+                  <h3>Alteração em Massa</h3>
+                  <p className="admin-helper-text">
+                    Edite vários produtos de uma vez seguindo o layout em tabela.
+                    Use o botão Salvar em cada linha para aplicar as mudanças sem
+                    sair da tela.
+                  </p>
+                </div>
+
+                <div className="admin-list bulk-edit-card">
+                  <div className="bulk-filters">
+                    <label className="bulk-filter-input">
+                      <span>Nome</span>
+                      <input
+                        type="text"
+                        placeholder="Filtrar por nome"
+                        value={bulkNameFilter}
+                        onChange={(e) => setBulkNameFilter(e.target.value)}
+                      />
+                    </label>
+
+                    <div className="bulk-sort-group">
+                      <span>Ordenação</span>
+                      <div className="bulk-sort-actions">
+                        <button
+                          type="button"
+                          className={
+                            bulkSortOrder === 'asc'
+                              ? 'secondary-button small active'
+                              : 'secondary-button small'
+                          }
+                          onClick={() => setBulkSortOrder('asc')}
+                        >
+                          Crescente
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            bulkSortOrder === 'desc'
+                              ? 'secondary-button small active'
+                              : 'secondary-button small'
+                          }
+                          onClick={() => setBulkSortOrder('desc')}
+                        >
+                          Decrescente
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bulk-edit-scroll">
+                    <div className="bulk-edit-table">
+                      <div className="bulk-edit-row bulk-edit-header">
+                        <span>Nome</span>
+                        <span>Descrição</span>
+                        <span>Custo</span>
+                        <span>Preço</span>
+                        <span>Categoria</span>
+                        <span>SubCategoria</span>
+                        <span>Imagem</span>
+                        <span>Destaque</span>
+                        <span>Ações</span>
+                      </div>
+
+                      {loadingProducts ? (
+                        <p className="admin-helper-text">Carregando produtos...</p>
+                      ) : filteredBulkRows.length === 0 ? (
+                        <p className="admin-helper-text">
+                          Nenhum produto encontrado com os filtros.
+                        </p>
+                      ) : (
+                        <div className="bulk-edit-body">
+                          {filteredBulkRows.map((row) => {
+                            const saving = bulkSavingIds.has(row.id)
+                            return (
+                              <div key={row.id} className="bulk-edit-row">
+                                <div className="bulk-edit-cell">
+                                  <input
+                                    type="text"
+                                    value={row.name}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'name',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Nome do produto"
+                                  />
+                                  <small className="bulk-row-hint">
+                                    Cod: {row.cod || row.id}
+                                    {row.codBarras && ` • CodBarras: ${row.codBarras}`}
+                                  </small>
+                                </div>
+
+                                <div className="bulk-edit-cell">
+                                  <textarea
+                                    value={row.description}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'description',
+                                        e.target.value,
+                                      )
+                                    }
+                                    rows={2}
+                                    placeholder="Descrição"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell small">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={row.costPrice}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'costPrice',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="0,00"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell small">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={row.price}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'price',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="0,00"
+                                    required
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell">
+                                  <input
+                                    type="text"
+                                    value={row.category}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'category',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Categoria"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell">
+                                  <input
+                                    type="text"
+                                    value={row.subcategory}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'subcategory',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Subcategoria"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell image-cell">
+                                  {row.hasImage ? (
+                                    <span className="bulk-image-flag">Sim</span>
+                                  ) : row.codBarras ? (
+                                    <label className="bulk-image-upload">
+                                      Enviar PNG
+                                      <input
+                                        type="file"
+                                        accept="image/png"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0]
+                                          if (file) {
+                                            handleUploadImage(row, file, () => {
+                                              setBulkRows((prev) =>
+                                                prev.map((r) =>
+                                                  r.id === row.id
+                                                    ? { ...r, hasImage: true }
+                                                    : r,
+                                                ),
+                                              )
+                                            })
+                                          }
+                                          e.target.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                  ) : (
+                                    <small className="bulk-row-hint">
+                                      Defina o Código de barras para enviar a imagem.
+                                    </small>
+                                  )}
+                                </div>
+
+                                <div className="bulk-edit-cell checkbox-cell">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.featured}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'featured',
+                                        e.target.checked,
+                                      )
+                                    }
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell action-cell">
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => handleBulkSave(row)}
+                                    disabled={saving}
+                                  >
+                                    {saving ? 'Salvando...' : 'Salvar'}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

@@ -19,7 +19,13 @@ function App() {
             onGoToHome={() => setCurrentPage('home')}
           />
           <Cart />
-          <main className="main-content">
+          <main
+            className={
+              currentPage === 'home'
+                ? 'main-content'
+                : 'main-content admin-content-full'
+            }
+          >
             {currentPage === 'home' ? <Home /> : <AdminPage />}
           </main>
           <Footer />
