@@ -1036,6 +1036,134 @@ body {
   gap: 0.25rem;
 }
 
+/* ALTERAÇÃO EM MASSA */
+
+.bulk-edit-table {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.bulk-edit-header {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.55rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.bulk-edit-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  max-height: 420px;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.bulk-edit-row {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1.2fr)
+    minmax(200px, 1.4fr)
+    minmax(80px, 0.55fr)
+    minmax(80px, 0.55fr)
+    minmax(150px, 1fr)
+    minmax(150px, 1fr)
+    minmax(130px, 0.8fr)
+    minmax(90px, 0.5fr)
+    minmax(110px, 0.6fr);
+  gap: 0.6rem;
+  align-items: stretch;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 0.6rem;
+}
+
+.bulk-edit-cell input,
+.bulk-edit-cell textarea {
+  width: 100%;
+  padding: 0.35rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #020514;
+  color: var(--color-light);
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bulk-edit-cell textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.bulk-row-hint {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.bulk-edit-cell.small input {
+  text-align: right;
+}
+
+.bulk-edit-cell.image-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.bulk-image-flag {
+  background: rgba(76, 217, 100, 0.15);
+  color: #4cd964;
+  border: 1px solid rgba(76, 217, 100, 0.4);
+  padding: 0.28rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.bulk-image-upload {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.35rem 0.75rem;
+  border: 1px dashed rgba(255, 255, 255, 0.28);
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--color-light);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.bulk-image-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.bulk-edit-cell.checkbox-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bulk-edit-cell.action-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.bulk-edit-row .secondary-button {
+  width: 100%;
+}
+
 .link-button.small {
   font-size: 0.75rem;
   padding-inline: 0.4rem;
