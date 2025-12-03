@@ -1441,9 +1441,9 @@ function AdminPage() {
           )}
 
           {activeSection === 'bulkEdit' && (
-            <div className="admin-categories">
-              <div className="admin-categories-layout">
-                <div className="admin-form">
+            <div className="admin-bulk">
+              <div className="bulk-edit-wrapper">
+                <div className="admin-form bulk-edit-intro">
                   <h3>Alteração em Massa</h3>
                   <p className="admin-helper-text">
                     Edite vários produtos de uma vez seguindo o layout em tabela.
@@ -1452,184 +1452,193 @@ function AdminPage() {
                   </p>
                 </div>
 
-                <div className="admin-list">
-                  <div className="bulk-edit-table">
-                    <div className="bulk-edit-row bulk-edit-header">
-                      <span>Nome</span>
-                      <span>Descrição</span>
-                      <span>Custo</span>
-                      <span>Preço</span>
-                      <span>Categoria</span>
-                      <span>SubCategoria</span>
-                      <span>Imagem</span>
-                      <span>Destaque</span>
-                      <span>Ações</span>
-                    </div>
-
-                    {loadingProducts ? (
-                      <p className="admin-helper-text">Carregando produtos...</p>
-                    ) : bulkRows.length === 0 ? (
-                      <p className="admin-helper-text">Nenhum produto cadastrado.</p>
-                    ) : (
-                      <div className="bulk-edit-body">
-                        {bulkRows.map((row) => {
-                          const saving = bulkSavingIds.has(row.id)
-                          return (
-                            <div key={row.id} className="bulk-edit-row">
-                              <div className="bulk-edit-cell">
-                                <input
-                                  type="text"
-                                  value={row.name}
-                                  onChange={(e) =>
-                                    handleBulkChange(row.id, 'name', e.target.value)
-                                  }
-                                  placeholder="Nome do produto"
-                                />
-                                <small className="bulk-row-hint">
-                                  Cod: {row.cod || row.id}
-                                </small>
-                              </div>
-
-                              <div className="bulk-edit-cell">
-                                <textarea
-                                  value={row.description}
-                                  onChange={(e) =>
-                                    handleBulkChange(
-                                      row.id,
-                                      'description',
-                                      e.target.value,
-                                    )
-                                  }
-                                  rows={2}
-                                  placeholder="Descrição"
-                                />
-                              </div>
-
-                              <div className="bulk-edit-cell small">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={row.costPrice}
-                                  onChange={(e) =>
-                                    handleBulkChange(
-                                      row.id,
-                                      'costPrice',
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="0,00"
-                                />
-                              </div>
-
-                              <div className="bulk-edit-cell small">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={row.price}
-                                  onChange={(e) =>
-                                    handleBulkChange(
-                                      row.id,
-                                      'price',
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="0,00"
-                                  required
-                                />
-                              </div>
-
-                              <div className="bulk-edit-cell">
-                                <input
-                                  type="text"
-                                  value={row.category}
-                                  onChange={(e) =>
-                                    handleBulkChange(
-                                      row.id,
-                                      'category',
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="Categoria"
-                                />
-                              </div>
-
-                              <div className="bulk-edit-cell">
-                                <input
-                                  type="text"
-                                  value={row.subcategory}
-                                  onChange={(e) =>
-                                    handleBulkChange(
-                                      row.id,
-                                      'subcategory',
-                                      e.target.value,
-                                    )
-                                  }
-                                  placeholder="Subcategoria"
-                                />
-                              </div>
-
-                              <div className="bulk-edit-cell image-cell">
-                                {row.hasImage ? (
-                                  <span className="bulk-image-flag">Sim</span>
-                                ) : row.codBarras ? (
-                                  <label className="bulk-image-upload">
-                                    Enviar PNG
-                                    <input
-                                      type="file"
-                                      accept="image/png"
-                                      onChange={(e) => {
-                                        const file = e.target.files?.[0]
-                                        if (file) {
-                                          handleUploadImage(row, file, () => {
-                                            setBulkRows((prev) =>
-                                              prev.map((r) =>
-                                                r.id === row.id
-                                                  ? { ...r, hasImage: true }
-                                                  : r,
-                                              ),
-                                            )
-                                          })
-                                        }
-                                        e.target.value = ''
-                                      }}
-                                    />
-                                  </label>
-                                ) : (
-                                  <small className="bulk-row-hint">
-                                    Defina o Código de barras para enviar a imagem.
-                                  </small>
-                                )}
-                              </div>
-
-                              <div className="bulk-edit-cell checkbox-cell">
-                                <input
-                                  type="checkbox"
-                                  checked={row.featured}
-                                  onChange={(e) =>
-                                    handleBulkChange(
-                                      row.id,
-                                      'featured',
-                                      e.target.checked,
-                                    )
-                                  }
-                                />
-                              </div>
-
-                              <div className="bulk-edit-cell action-cell">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  onClick={() => handleBulkSave(row)}
-                                  disabled={saving}
-                                >
-                                  {saving ? 'Salvando...' : 'Salvar'}
-                                </button>
-                              </div>
-                            </div>
-                          )
-                        })}
+                <div className="admin-list bulk-edit-card">
+                  <div className="bulk-edit-scroll">
+                    <div className="bulk-edit-table">
+                      <div className="bulk-edit-row bulk-edit-header">
+                        <span>Nome</span>
+                        <span>Descrição</span>
+                        <span>Custo</span>
+                        <span>Preço</span>
+                        <span>Categoria</span>
+                        <span>SubCategoria</span>
+                        <span>Imagem</span>
+                        <span>Destaque</span>
+                        <span>Ações</span>
                       </div>
-                    )}
+
+                      {loadingProducts ? (
+                        <p className="admin-helper-text">Carregando produtos...</p>
+                      ) : bulkRows.length === 0 ? (
+                        <p className="admin-helper-text">
+                          Nenhum produto cadastrado.
+                        </p>
+                      ) : (
+                        <div className="bulk-edit-body">
+                          {bulkRows.map((row) => {
+                            const saving = bulkSavingIds.has(row.id)
+                            return (
+                              <div key={row.id} className="bulk-edit-row">
+                                <div className="bulk-edit-cell">
+                                  <input
+                                    type="text"
+                                    value={row.name}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'name',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Nome do produto"
+                                  />
+                                  <small className="bulk-row-hint">
+                                    Cod: {row.cod || row.id}
+                                    {row.codBarras && ` • CodBarras: ${row.codBarras}`}
+                                  </small>
+                                </div>
+
+                                <div className="bulk-edit-cell">
+                                  <textarea
+                                    value={row.description}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'description',
+                                        e.target.value,
+                                      )
+                                    }
+                                    rows={2}
+                                    placeholder="Descrição"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell small">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={row.costPrice}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'costPrice',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="0,00"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell small">
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={row.price}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'price',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="0,00"
+                                    required
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell">
+                                  <input
+                                    type="text"
+                                    value={row.category}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'category',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Categoria"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell">
+                                  <input
+                                    type="text"
+                                    value={row.subcategory}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'subcategory',
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Subcategoria"
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell image-cell">
+                                  {row.hasImage ? (
+                                    <span className="bulk-image-flag">Sim</span>
+                                  ) : row.codBarras ? (
+                                    <label className="bulk-image-upload">
+                                      Enviar PNG
+                                      <input
+                                        type="file"
+                                        accept="image/png"
+                                        onChange={(e) => {
+                                          const file = e.target.files?.[0]
+                                          if (file) {
+                                            handleUploadImage(row, file, () => {
+                                              setBulkRows((prev) =>
+                                                prev.map((r) =>
+                                                  r.id === row.id
+                                                    ? { ...r, hasImage: true }
+                                                    : r,
+                                                ),
+                                              )
+                                            })
+                                          }
+                                          e.target.value = ''
+                                        }}
+                                      />
+                                    </label>
+                                  ) : (
+                                    <small className="bulk-row-hint">
+                                      Defina o Código de barras para enviar a imagem.
+                                    </small>
+                                  )}
+                                </div>
+
+                                <div className="bulk-edit-cell checkbox-cell">
+                                  <input
+                                    type="checkbox"
+                                    checked={row.featured}
+                                    onChange={(e) =>
+                                      handleBulkChange(
+                                        row.id,
+                                        'featured',
+                                        e.target.checked,
+                                      )
+                                    }
+                                  />
+                                </div>
+
+                                <div className="bulk-edit-cell action-cell">
+                                  <button
+                                    type="button"
+                                    className="secondary-button"
+                                    onClick={() => handleBulkSave(row)}
+                                    disabled={saving}
+                                  >
+                                    {saving ? 'Salvando...' : 'Salvar'}
+                                  </button>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
