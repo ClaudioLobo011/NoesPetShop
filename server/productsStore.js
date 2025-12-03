@@ -48,6 +48,10 @@ async function addProduct(product) {
     name: product.name,
     description: product.description || '',
     price: Number(product.price) || 0,
+    costPrice:
+      product.costPrice !== undefined && product.costPrice !== null
+        ? Number(product.costPrice) || 0
+        : null,
     category: product.category || '',
     subcategory: product.subcategory || '',
     featured: product.featured !== false,
@@ -82,6 +86,12 @@ async function updateProduct(id, updates) {
     category: updates.category ?? current.category,
     subcategory: updates.subcategory ?? current.subcategory,
     codBarras: updates.codBarras ?? current.codBarras,
+    costPrice:
+      Object.prototype.hasOwnProperty.call(updates, 'costPrice')
+        ? updates.costPrice !== null && updates.costPrice !== undefined
+          ? Number(updates.costPrice) || 0
+          : null
+        : current.costPrice ?? null,
     featured:
       typeof updates.featured === 'boolean'
         ? updates.featured

@@ -6,7 +6,11 @@ import { API_URL } from '../config/apiConfig'
 function AdminPage() {
   const { adminUser, checking, logout } = useAuth()
 
-  const [activeSection, setActiveSection] = useState('products') // 'products' | 'categories'
+  const [activeSection, setActiveSection] = useState('products') // 'products' | 'import' | 'categories' | 'promotions'
+
+  const [importFile, setImportFile] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
 
   // ---- PRODUTOS ----
   const [products, setProducts] = useState([])
@@ -398,6 +402,51 @@ function AdminPage() {
     setProductSearchModalOpen(false)
   }
 
+  // ===== IMPORTAÇÃO =====
+
+  function handleImportFileChange(e) {
+    setImportFile(e.target.files?.[0] || null)
+    setImportResult(null)
+  }
+
+  async function handleImportSubmit(e) {
+    e.preventDefault()
+    clearMessages()
+    setImportResult(null)
+
+    if (!importFile) {
+      setError('Selecione um arquivo Excel ou CSV para importar.')
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('file', importFile)
+
+    setImporting(true)
+    try {
+      const res = await fetch(`${API_URL}/api/products/import`, {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao importar a planilha.')
+      }
+
+      setImportResult(data)
+      setSuccess(data.message || 'Importação concluída.')
+      await fetchProducts()
+      await fetchCategories()
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   // ===== PRODUTOS =====
 
   function handleProductChange(e) {
@@ -759,6 +808,22 @@ function AdminPage() {
           <button
             type="button"
             className={
+              activeSection === 'import'
+                ? 'admin-sidebar-btn active'
+                : 'admin-sidebar-btn'
+            }
+            onClick={() => {
+              setActiveSection('import')
+              setImportResult(null)
+              clearMessages()
+            }}
+          >
+            Importar Produtos
+          </button>
+
+          <button
+            type="button"
+            className={
               activeSection === 'categories'
                 ? 'admin-sidebar-btn active'
                 : 'admin-sidebar-btn'
@@ -990,6 +1055,106 @@ function AdminPage() {
                     ))}
                   </ul>
                 )}
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'import' && (
+            <div className="admin-categories">
+              <div className="admin-categories-layout">
+                <form className="admin-form" onSubmit={handleImportSubmit}>
+                  <h3>Importar Produtos</h3>
+
+                  <p className="admin-helper-text">
+                    Envie uma planilha Excel (.xlsx/.xls) ou CSV com as colunas
+                    abaixo. O código é gerado automaticamente. Se a categoria
+                    não existir, criaremos uma nova.
+                  </p>
+
+                  <ul className="admin-helper-list">
+                    <li>CodBarras (opcional)</li>
+                    <li>Descrição</li>
+                    <li>Preço de Custo</li>
+                    <li>Preço de Venda</li>
+                    <li>Categoria</li>
+                    <li>SubCategoria (opcional, vinculada à Categoria)</li>
+                  </ul>
+
+                  <label>
+                    Arquivo da planilha
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      onChange={handleImportFileChange}
+                      required
+                    />
+                  </label>
+
+                  {importResult && (
+                    <div className="import-summary">
+                      <p>
+                        <strong>Linhas processadas:</strong>{' '}
+                        {importResult.totalLinhas || 0}
+                      </p>
+                      <p>
+                        <strong>Produtos criados:</strong>{' '}
+                        {importResult.produtosCriados || 0}
+                      </p>
+                      <p>
+                        <strong>Produtos atualizados:</strong>{' '}
+                        {importResult.produtosAtualizados || 0}
+                      </p>
+                      {importResult.subcategoriasCriadas &&
+                        importResult.subcategoriasCriadas.length > 0 && (
+                          <div>
+                            <strong>Subcategorias criadas:</strong>
+                            <ul>
+                              {importResult.subcategoriasCriadas.map((sub) => (
+                                <li key={sub}>{sub}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      {importResult.categoriasCriadas &&
+                        importResult.categoriasCriadas.length > 0 && (
+                          <div>
+                            <strong>Categorias criadas:</strong>
+                            <ul>
+                              {importResult.categoriasCriadas.map((cat) => (
+                                <li key={cat}>{cat}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                      {importResult.erros && importResult.erros.length > 0 && (
+                        <div className="import-errors">
+                          <p>
+                            Foram encontrados {importResult.erros.length} erros
+                            na planilha:
+                          </p>
+                          <ul>
+                            {importResult.erros.map((err) => (
+                              <li key={`${err.row}-${err.mensagem}`}>
+                                <strong>Linha {err.row}:</strong> {err.mensagem}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="form-row form-actions">
+                    <button
+                      type="submit"
+                      className="primary-button full"
+                      disabled={importing}
+                    >
+                      {importing ? 'Importando...' : 'Importar planilha'}
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           )}
