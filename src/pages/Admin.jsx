@@ -32,8 +32,10 @@ function AdminPage() {
   // ---- ALTERAÇÃO EM MASSA ----
   const [bulkRows, setBulkRows] = useState([])
   const [bulkSavingIds, setBulkSavingIds] = useState(() => new Set())
+  const [bulkSavingAll, setBulkSavingAll] = useState(false)
   const [bulkNameFilter, setBulkNameFilter] = useState('')
-  const [bulkSortOrder, setBulkSortOrder] = useState('asc')
+  const [bulkSortColumn, setBulkSortColumn] = useState('name')
+  const [bulkSortDirection, setBulkSortDirection] = useState('asc')
 
   // ---- CATEGORIAS ----
   const [categories, setCategories] = useState([])
@@ -657,6 +659,34 @@ function AdminPage() {
     setBulkRows(products.map(mapProductToBulkRow))
   }, [products])
 
+  function normalizeBulkValue(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'boolean') return value ? 'true' : 'false'
+    return String(value).trim()
+  }
+
+  function hasBulkChanges(row) {
+    const original = products.find((p) => p.id === row.id)
+    if (!original) return true
+
+    const originalMapped = mapProductToBulkRow(original)
+    const fieldsToCompare = [
+      'name',
+      'description',
+      'costPrice',
+      'price',
+      'category',
+      'subcategory',
+      'featured',
+      'codBarras',
+    ]
+
+    return fieldsToCompare.some(
+      (field) =>
+        normalizeBulkValue(row[field]) !== normalizeBulkValue(originalMapped[field]),
+    )
+  }
+
   const filteredBulkRows = useMemo(() => {
     const term = bulkNameFilter.trim().toLowerCase()
     const rows = term
@@ -664,18 +694,47 @@ function AdminPage() {
       : bulkRows
 
     const sorted = [...rows].sort((a, b) => {
-      const nameA = (a.name || '').toLowerCase()
-      const nameB = (b.name || '').toLowerCase()
+      const getValue = (row, column) => {
+        if (column === 'costPrice') {
+          const parsed = Number(String(row.costPrice || '').replace(',', '.'))
+          return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+        }
 
-      if (nameA === nameB) return 0
-      if (bulkSortOrder === 'desc') {
-        return nameA < nameB ? 1 : -1
+        if (column === 'price') {
+          const parsed = Number(String(row.price || '').replace(',', '.'))
+          return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY
+        }
+
+        if (column === 'hasImage') return row.hasImage ? 1 : 0
+
+        return (row[column] || '').toString().toLowerCase()
       }
-      return nameA > nameB ? 1 : -1
+
+      const valueA = getValue(a, bulkSortColumn)
+      const valueB = getValue(b, bulkSortColumn)
+
+      if (valueA === valueB) return 0
+
+      const direction = bulkSortDirection === 'asc' ? 1 : -1
+
+      if (typeof valueA === 'number' && typeof valueB === 'number') {
+        return valueA > valueB ? direction : -direction
+      }
+
+      return valueA > valueB ? direction : -direction
     })
 
     return sorted
-  }, [bulkRows, bulkNameFilter, bulkSortOrder])
+  }, [bulkRows, bulkNameFilter, bulkSortColumn, bulkSortDirection])
+
+  function handleBulkSort(column, direction) {
+    setBulkSortColumn(column)
+    setBulkSortDirection(direction)
+  }
+
+  function handleToggleAllFeatured(value) {
+    setBulkRows((prev) => prev.map((row) => ({ ...row, featured: value })))
+  }
 
   function handleBulkChange(id, field, value) {
     setBulkRows((prev) =>
@@ -702,9 +761,7 @@ function AdminPage() {
     })
   }
 
-  async function handleBulkSave(row) {
-    clearMessages()
-
+  function prepareBulkPayload(row) {
     const parsedPrice = Number(String(row.price).replace(',', '.'))
     const parsedCost =
       row.costPrice === '' || row.costPrice === null
@@ -712,54 +769,104 @@ function AdminPage() {
         : Number(String(row.costPrice).replace(',', '.'))
 
     if (!row.name) {
-      setError('Nome é obrigatório na alteração em massa.')
-      return
+      return { error: 'Nome é obrigatório na alteração em massa.' }
     }
 
     if (!Number.isFinite(parsedPrice)) {
-      setError('Informe um preço válido para salvar a linha.')
-      return
+      return { error: 'Informe um preço válido para salvar a linha.' }
     }
 
     if (row.costPrice !== '' && row.costPrice !== null && !Number.isFinite(parsedCost)) {
-      setError('Informe um custo válido ou deixe em branco.')
+      return { error: 'Informe um custo válido ou deixe em branco.' }
+    }
+
+    return { parsedPrice, parsedCost }
+  }
+
+  async function submitBulkRow(row, parsedPrice, parsedCost) {
+    const res = await fetch(`${API_URL}/api/products/${row.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: row.name,
+        description: row.description,
+        price: parsedPrice,
+        category: row.category,
+        subcategory: row.subcategory,
+        costPrice: parsedCost,
+        featured: !!row.featured,
+        codBarras: row.codBarras,
+      }),
+    })
+
+    const data = await res.json()
+    if (!res.ok) {
+      throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+    }
+
+    setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+    setBulkRows((prev) =>
+      prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
+    )
+  }
+
+  async function handleBulkSave(row) {
+    clearMessages()
+
+    const validation = prepareBulkPayload(row)
+    if (validation.error) {
+      setError(validation.error)
       return
     }
 
+    const { parsedPrice, parsedCost } = validation
     toggleBulkSaving(row.id, true)
 
     try {
-      const res = await fetch(`${API_URL}/api/products/${row.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          name: row.name,
-          description: row.description,
-          price: parsedPrice,
-          category: row.category,
-          subcategory: row.subcategory,
-          costPrice: parsedCost,
-          featured: !!row.featured,
-          codBarras: row.codBarras,
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.message || 'Erro ao salvar alterações em massa.')
-      }
-
-      setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
-      setBulkRows((prev) =>
-        prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
-      )
+      await submitBulkRow(row, parsedPrice, parsedCost)
       setSuccess('Linha atualizada com sucesso.')
     } catch (err) {
       console.error(err)
       setError(err.message)
     } finally {
       toggleBulkSaving(row.id, false)
+    }
+  }
+
+  async function handleBulkSaveAll() {
+    clearMessages()
+
+    const rowsToSave = bulkRows.filter(hasBulkChanges)
+    if (rowsToSave.length === 0) {
+      setSuccess('Nenhuma alteração para salvar.')
+      return
+    }
+
+    setBulkSavingAll(true)
+    const currentlySaving = new Set()
+
+    try {
+      for (const row of rowsToSave) {
+        const validation = prepareBulkPayload(row)
+        if (validation.error) {
+          setError(validation.error)
+          return
+        }
+
+        const { parsedPrice, parsedCost } = validation
+        toggleBulkSaving(row.id, true)
+        currentlySaving.add(row.id)
+        await submitBulkRow(row, parsedPrice, parsedCost)
+      }
+
+      setSuccess('Alterações em massa salvas com sucesso.')
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setBulkSavingAll(false)
+      currentlySaving.forEach((id) => toggleBulkSaving(id, false))
     }
   }
 
@@ -1486,47 +1593,258 @@ function AdminPage() {
                       />
                     </label>
 
-                    <div className="bulk-sort-group">
-                      <span>Ordenação</span>
-                      <div className="bulk-sort-actions">
-                        <button
-                          type="button"
-                          className={
-                            bulkSortOrder === 'asc'
-                              ? 'secondary-button small active'
-                              : 'secondary-button small'
-                          }
-                          onClick={() => setBulkSortOrder('asc')}
-                        >
-                          Crescente
-                        </button>
-                        <button
-                          type="button"
-                          className={
-                            bulkSortOrder === 'desc'
-                              ? 'secondary-button small active'
-                              : 'secondary-button small'
-                          }
-                          onClick={() => setBulkSortOrder('desc')}
-                        >
-                          Decrescente
-                        </button>
-                      </div>
+                    <div className="bulk-actions">
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={handleBulkSaveAll}
+                        disabled={bulkSavingAll || loadingProducts}
+                      >
+                        {bulkSavingAll ? 'Salvando todos...' : 'Salvar todos'}
+                      </button>
                     </div>
                   </div>
 
                   <div className="bulk-edit-scroll">
                     <div className="bulk-edit-table">
                       <div className="bulk-edit-row bulk-edit-header">
-                        <span>Nome</span>
-                        <span>Descrição</span>
-                        <span>Custo</span>
-                        <span>Preço</span>
-                        <span>Categoria</span>
-                        <span>SubCategoria</span>
-                        <span>Imagem</span>
-                        <span>Destaque</span>
-                        <span>Ações</span>
+                        <div className="bulk-header-cell">
+                          <span>Nome</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'name' && bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('name', 'asc')}
+                              aria-label="Ordenar nome de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'name' && bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('name', 'desc')}
+                              aria-label="Ordenar nome de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>Descrição</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'description' &&
+                                bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('description', 'asc')}
+                              aria-label="Ordenar descrição de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'description' &&
+                                bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('description', 'desc')}
+                              aria-label="Ordenar descrição de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>Custo</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'costPrice' &&
+                                bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('costPrice', 'asc')}
+                              aria-label="Ordenar custo de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'costPrice' &&
+                                bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('costPrice', 'desc')}
+                              aria-label="Ordenar custo de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>Preço</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'price' &&
+                                bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('price', 'asc')}
+                              aria-label="Ordenar preço de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'price' &&
+                                bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('price', 'desc')}
+                              aria-label="Ordenar preço de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>Categoria</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'category' &&
+                                bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('category', 'asc')}
+                              aria-label="Ordenar categoria de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'category' &&
+                                bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('category', 'desc')}
+                              aria-label="Ordenar categoria de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>SubCategoria</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'subcategory' &&
+                                bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('subcategory', 'asc')}
+                              aria-label="Ordenar subcategoria de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'subcategory' &&
+                                bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('subcategory', 'desc')}
+                              aria-label="Ordenar subcategoria de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>Imagem</span>
+                          <div className="bulk-sort-buttons">
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'hasImage' &&
+                                bulkSortDirection === 'asc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('hasImage', 'asc')}
+                              aria-label="Ordenar imagem de forma crescente"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              className={
+                                bulkSortColumn === 'hasImage' &&
+                                bulkSortDirection === 'desc'
+                                  ? 'bulk-sort-button active'
+                                  : 'bulk-sort-button'
+                              }
+                              onClick={() => handleBulkSort('hasImage', 'desc')}
+                              aria-label="Ordenar imagem de forma decrescente"
+                            >
+                              ↓
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell bulk-featured-header">
+                          <span>Destaque</span>
+                          <div className="bulk-featured-actions">
+                            <button
+                              type="button"
+                              className="link-button small"
+                              onClick={() => handleToggleAllFeatured(true)}
+                            >
+                              Marcar todos
+                            </button>
+                            <button
+                              type="button"
+                              className="link-button small"
+                              onClick={() => handleToggleAllFeatured(false)}
+                            >
+                              Desmarcar todos
+                            </button>
+                          </div>
+                        </div>
+                        <div className="bulk-header-cell">
+                          <span>Ações</span>
+                        </div>
                       </div>
 
                       {loadingProducts ? (
