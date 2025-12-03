@@ -106,6 +106,15 @@ function AdminPage() {
     return normalizeId(value)
   }
 
+  function getProductLabel(product) {
+    if (!product) return 'Produto'
+    const name = product.name?.trim()
+    const cod = normalizeId(product.cod)
+    const codBarras = normalizeId(product.codBarras)
+    const id = getProductId(product)
+    return name || cod || codBarras || id || 'Produto'
+  }
+
   async function fetchProducts() {
     setLoadingProducts(true)
     clearMessages()
@@ -872,23 +881,41 @@ function AdminPage() {
 
     setBulkSavingAll(true)
     const currentlySaving = new Set()
+    const errorMessages = []
+    let savedCount = 0
 
     try {
       for (const row of rowsToSave) {
         const validation = prepareBulkPayload(row)
         if (validation.error) {
-          setError(validation.error)
-          return
+          errorMessages.push(`${getProductLabel(row)}: ${validation.error}`)
+          continue
         }
 
         const { parsedPrice, parsedCost } = validation
         const rowId = getProductId(row)
+
         toggleBulkSaving(rowId, true)
         currentlySaving.add(rowId)
-        await submitBulkRow(row, parsedPrice, parsedCost)
+
+        try {
+          await submitBulkRow(row, parsedPrice, parsedCost)
+          savedCount += 1
+        } catch (err) {
+          console.error(err)
+          errorMessages.push(`${getProductLabel(row)}: ${err.message}`)
+        } finally {
+          toggleBulkSaving(rowId, false)
+          currentlySaving.delete(rowId)
+        }
       }
 
-      setSuccess('Alterações em massa salvas com sucesso.')
+      if (savedCount > 0) {
+        setSuccess(`Alterações em ${savedCount} produto(s) salvas com sucesso.`)
+      }
+      if (errorMessages.length > 0) {
+        setError(errorMessages.join(' | '))
+      }
     } catch (err) {
       console.error(err)
       setError(err.message)
