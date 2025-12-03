@@ -11,6 +11,29 @@ function AdminPage() {
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const importExampleRows = useMemo(
+    () => [
+      {
+        CodBarras: '7891234567890',
+        Descrição: 'Ração Premium 3kg',
+        'Preço de Custo': '45,90',
+        'Preço de Venda': '79,90',
+        Categoria: 'Rações',
+        SubCategoria: 'Cães Adultos',
+        Destaque: 'Sim',
+      },
+      {
+        CodBarras: '7899876543210',
+        Descrição: 'Brinquedo Corda',
+        'Preço de Custo': '9,50',
+        'Preço de Venda': '19,90',
+        Categoria: 'Brinquedos',
+        SubCategoria: '',
+        Destaque: 'Não',
+      },
+    ],
+    [],
+  )
 
   // ---- PRODUTOS ----
   const [products, setProducts] = useState([])
@@ -102,8 +125,55 @@ function AdminPage() {
   function getProductId(product) {
     if (!product) return ''
     const value =
-      product._id ?? product.id ?? product.cod ?? product.codBarras ?? ''
+      product.id ?? product.cod ?? product._id ?? product.codBarras ?? ''
     return normalizeId(value)
+  }
+
+  function buildIdentifiers(source, keys) {
+    const list = []
+    const add = (value) => {
+      const normalized = normalizeId(value)
+      if (normalized && !list.includes(normalized)) {
+        list.push(normalized)
+      }
+    }
+
+    keys.forEach((key) => add(source?.[key]))
+    return list
+  }
+
+  function getProductIdentifiers(product) {
+    const persisted = Array.isArray(product?.originalIdentifiers)
+      ? product.originalIdentifiers
+      : []
+
+    const dynamic = buildIdentifiers(product, ['id', 'cod', '_id', 'codBarras'])
+    const combined = [...persisted, ...dynamic]
+
+    return combined
+      .map((value) => normalizeId(value))
+      .filter((value, index, arr) => value && arr.indexOf(value) === index)
+  }
+
+  function ensureOriginalIdentifiers(product, base = product) {
+    const persisted = Array.isArray(base?.originalIdentifiers)
+      ? base.originalIdentifiers
+      : []
+    const dynamic = buildIdentifiers(base, ['id', 'cod', '_id', 'codBarras'])
+    const combined = [...persisted, ...dynamic]
+      .map((value) => normalizeId(value))
+      .filter((value, index, arr) => value && arr.indexOf(value) === index)
+
+    return { ...product, originalIdentifiers: combined }
+  }
+
+  function getProductLabel(product) {
+    if (!product) return 'Produto'
+    const name = product.name?.trim()
+    const cod = normalizeId(product.cod)
+    const codBarras = normalizeId(product.codBarras)
+    const id = getProductId(product)
+    return name || cod || codBarras || id || 'Produto'
   }
 
   async function fetchProducts() {
@@ -113,7 +183,8 @@ function AdminPage() {
       const res = await fetch(`${API_URL}/api/products`)
       if (!res.ok) throw new Error('Erro ao buscar produtos')
       const data = await res.json()
-      setProducts(Array.isArray(data) ? data : [])
+      const list = Array.isArray(data) ? data : []
+      setProducts(list.map((product) => ensureOriginalIdentifiers(product)))
     } catch (err) {
       console.error(err)
       setError('Erro ao carregar produtos.')
@@ -517,7 +588,10 @@ function AdminPage() {
           throw new Error(data.message || 'Erro ao salvar produto.')
         }
 
-        setProducts((prev) => [...prev, data])
+        setProducts((prev) => [
+          ...prev,
+          ensureOriginalIdentifiers(data, productForm),
+        ])
         resetProductForm()
         setSuccess('Produto criado com sucesso.')
       } else {
@@ -541,7 +615,11 @@ function AdminPage() {
 
         const updatedId = getProductId(data)
         setProducts((prev) =>
-          prev.map((p) => (getProductId(p) === updatedId ? data : p)),
+          prev.map((p) =>
+            getProductId(p) === updatedId
+              ? ensureOriginalIdentifiers(data, p)
+              : p,
+          ),
         )
         resetProductForm()
         setSuccess('Produto atualizado com sucesso.')
@@ -603,6 +681,14 @@ function AdminPage() {
       return
     }
 
+    const identifiers = getProductIdentifiers(product)
+    const targetId = identifiers[0] || getProductId(product)
+
+    if (!targetId) {
+      setError('Não foi possível identificar o produto para enviar a imagem.')
+      return
+    }
+
     const formData = new FormData()
     formData.append('codBarras', product.codBarras)
     formData.append('image', file)
@@ -610,7 +696,7 @@ function AdminPage() {
     try {
       clearMessages()
       const res = await fetch(
-        `${API_URL}/api/products/${getProductId(product)}/image`,
+        `${API_URL}/api/products/${targetId}/image`,
         {
           method: 'POST',
           credentials: 'include',
@@ -622,6 +708,20 @@ function AdminPage() {
         throw new Error(data.message || 'Erro ao enviar imagem.')
       }
       setSuccess('Imagem enviada com sucesso.')
+      setProducts((prev) =>
+        prev.map((p) =>
+          getProductId(p) === targetId
+            ? ensureOriginalIdentifiers({ ...p, imageUrl: data.imageUrl }, p)
+            : p,
+        ),
+      )
+      setBulkRows((prev) =>
+        prev.map((row) =>
+          getProductId(row) === targetId
+            ? { ...row, hasImage: true }
+            : row,
+        ),
+      )
       if (typeof onUploaded === 'function') {
         onUploaded(data.imageUrl)
       }
@@ -647,25 +747,27 @@ function AdminPage() {
   }, [products, searchTerm])
 
   function mapProductToBulkRow(product) {
+    const normalized = ensureOriginalIdentifiers(product)
     return {
-      _id: normalizeId(product._id),
-      id: getProductId(product),
-      cod: product.cod,
-      name: product.name || '',
-      description: product.description || '',
+      _id: normalizeId(normalized._id),
+      id: getProductId(normalized),
+      cod: normalized.cod,
+      originalIdentifiers: normalized.originalIdentifiers,
+      name: normalized.name || '',
+      description: normalized.description || '',
       costPrice:
-        product.costPrice !== undefined && product.costPrice !== null
-          ? String(product.costPrice).replace(',', '.')
+        normalized.costPrice !== undefined && normalized.costPrice !== null
+          ? String(normalized.costPrice).replace(',', '.')
           : '',
       price:
-        typeof product.price === 'number'
-          ? product.price.toString().replace(',', '.')
-          : product.price || '',
-      category: product.category || '',
-      subcategory: product.subcategory || '',
-      featured: product.featured !== false,
-      codBarras: product.codBarras || '',
-      hasImage: Boolean(product.imageUrl),
+        typeof normalized.price === 'number'
+          ? normalized.price.toString().replace(',', '.')
+          : normalized.price || '',
+      category: normalized.category || '',
+      subcategory: normalized.subcategory || '',
+      featured: normalized.featured !== false,
+      codBarras: normalized.codBarras || '',
+      hasImage: Boolean(normalized.imageUrl),
     }
   }
 
@@ -799,42 +901,59 @@ function AdminPage() {
   }
 
   async function submitBulkRow(row, parsedPrice, parsedCost) {
-    const productId = getProductId(row)
+    const identifiers = getProductIdentifiers(row)
 
-    if (!productId) {
+    if (!identifiers.length) {
       throw new Error('Produto sem identificador válido para salvar.')
     }
 
-    const res = await fetch(`${API_URL}/api/products/${productId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        name: row.name,
-        description: row.description,
-        price: parsedPrice,
-        category: row.category,
-        subcategory: row.subcategory,
-        costPrice: parsedCost,
-        featured: !!row.featured,
-        codBarras: row.codBarras,
-      }),
-    })
+    let lastError = null
 
-    const data = await res.json()
-    if (!res.ok) {
-      throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+    const trySave = async (productId) => {
+      const res = await fetch(`${API_URL}/api/products/${productId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: row.name,
+          description: row.description,
+          price: parsedPrice,
+          category: row.category,
+          subcategory: row.subcategory,
+          costPrice: parsedCost,
+          featured: !!row.featured,
+          codBarras: row.codBarras,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+      }
+
+      const updatedId = getProductId(data)
+      const normalized = ensureOriginalIdentifiers(data, row)
+      setProducts((prev) =>
+        prev.map((p) => (getProductId(p) === updatedId ? normalized : p)),
+      )
+      setBulkRows((prev) =>
+        prev.map((r) =>
+          getProductId(r) === updatedId ? mapProductToBulkRow(normalized) : r,
+        ),
+      )
     }
 
-    const updatedId = getProductId(data)
-    setProducts((prev) =>
-      prev.map((p) => (getProductId(p) === updatedId ? data : p)),
-    )
-    setBulkRows((prev) =>
-      prev.map((r) =>
-        getProductId(r) === updatedId ? mapProductToBulkRow(data) : r,
-      ),
-    )
+    for (const productId of identifiers) {
+      try {
+        await trySave(productId)
+        return
+      } catch (err) {
+        console.error(`Erro ao salvar ${getProductLabel(row)} com id ${productId}`)
+        lastError = err
+      }
+    }
+
+    throw lastError || new Error('Erro ao salvar alterações em massa.')
   }
 
   async function handleBulkSave(row) {
@@ -872,23 +991,41 @@ function AdminPage() {
 
     setBulkSavingAll(true)
     const currentlySaving = new Set()
+    const errorMessages = []
+    let savedCount = 0
 
     try {
       for (const row of rowsToSave) {
         const validation = prepareBulkPayload(row)
         if (validation.error) {
-          setError(validation.error)
-          return
+          errorMessages.push(`${getProductLabel(row)}: ${validation.error}`)
+          continue
         }
 
         const { parsedPrice, parsedCost } = validation
         const rowId = getProductId(row)
+
         toggleBulkSaving(rowId, true)
         currentlySaving.add(rowId)
-        await submitBulkRow(row, parsedPrice, parsedCost)
+
+        try {
+          await submitBulkRow(row, parsedPrice, parsedCost)
+          savedCount += 1
+        } catch (err) {
+          console.error(err)
+          errorMessages.push(`${getProductLabel(row)}: ${err.message}`)
+        } finally {
+          toggleBulkSaving(rowId, false)
+          currentlySaving.delete(rowId)
+        }
       }
 
-      setSuccess('Alterações em massa salvas com sucesso.')
+      if (savedCount > 0) {
+        setSuccess(`Alterações em ${savedCount} produto(s) salvas com sucesso.`)
+      }
+      if (errorMessages.length > 0) {
+        setError(errorMessages.join(' | '))
+      }
     } catch (err) {
       console.error(err)
       setError(err.message)
@@ -1279,14 +1416,23 @@ function AdminPage() {
                   <ul className="admin-products-list">
                     {filteredProducts.map((p) => (
                       <li key={p.id} className="admin-product-item">
-                        <div>
-                          <strong>{p.name}</strong>
-                          <p>
-                            {p.price?.toLocaleString?.('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL',
-                            }) || `R$ ${p.price}`}
-                          </p>
+                        <div className="admin-product-info">
+                          <div className="admin-product-thumb" aria-label="Pré-visualização da imagem do produto">
+                            {p.imageUrl ? (
+                              <img src={p.imageUrl} alt={p.name || 'Imagem do produto'} loading="lazy" />
+                            ) : (
+                              <span>Sem imagem</span>
+                            )}
+                          </div>
+
+                          <div>
+                            <strong>{p.name}</strong>
+                            <p>
+                              {p.price?.toLocaleString?.('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              }) || `R$ ${p.price}`}
+                            </p>
 
                             <div
                               style={{
@@ -1299,12 +1445,13 @@ function AdminPage() {
                               {p.codBarras && <span> • CodBarras: {p.codBarras}</span>}
                             </div>
 
-                          {p.category && (
-                            <small>
-                              {p.category}
-                              {p.subcategory ? ` • ${p.subcategory}` : ''}
-                            </small>
-                          )}
+                            {p.category && (
+                              <small>
+                                {p.category}
+                                {p.subcategory ? ` • ${p.subcategory}` : ''}
+                              </small>
+                            )}
+                          </div>
                         </div>
 
                         <div className="admin-item-actions">
@@ -1358,8 +1505,9 @@ function AdminPage() {
 
                   <p className="admin-helper-text">
                     Envie uma planilha Excel (.xlsx/.xls) ou CSV com as colunas
-                    abaixo. O código é gerado automaticamente. Se a categoria
-                    não existir, criaremos uma nova.
+                    abaixo. O código é gerado automaticamente e os dados são
+                    gravados diretamente no banco MongoDB. Se a categoria não
+                    existir, criaremos uma nova.
                   </p>
 
                   <ul className="admin-helper-list">
@@ -1369,17 +1517,57 @@ function AdminPage() {
                     <li>Preço de Venda</li>
                     <li>Categoria</li>
                     <li>SubCategoria (opcional, vinculada à Categoria)</li>
+                    <li>Destaque (Sim = marcado, Não ou vazio = desmarcado)</li>
                   </ul>
 
-                  <label>
-                    Arquivo da planilha
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={handleImportFileChange}
-                      required
-                    />
-                  </label>
+                  <div className="import-file-row">
+                    <label>
+                      Arquivo da planilha
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleImportFileChange}
+                        required
+                      />
+                    </label>
+
+                    {importFile && (
+                      <div className="import-example" aria-live="polite">
+                        <div className="import-example-header">
+                          <strong>Exemplo de preenchimento</strong>
+                          <span>{importFile?.name}</span>
+                        </div>
+                        <div className="import-example-table-wrapper">
+                          <table className="import-example-table">
+                            <thead>
+                              <tr>
+                                <th>CodBarras</th>
+                                <th>Descrição</th>
+                                <th>Preço de Custo</th>
+                                <th>Preço de Venda</th>
+                                <th>Categoria</th>
+                                <th>SubCategoria</th>
+                                <th>Destaque</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {importExampleRows.map((row) => (
+                                <tr key={`${row.CodBarras}-${row.Descrição}`}>
+                                  <td>{row.CodBarras}</td>
+                                  <td>{row.Descrição}</td>
+                                  <td>{row['Preço de Custo']}</td>
+                                  <td>{row['Preço de Venda']}</td>
+                                  <td>{row.Categoria}</td>
+                                  <td>{row.SubCategoria || '-'}</td>
+                                  <td>{row.Destaque}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {importResult && (
                     <div className="import-summary">

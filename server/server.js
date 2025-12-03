@@ -36,6 +36,7 @@ const r2Configured =
   Boolean(R2_REGION)
 
 const r2PublicBaseUrl = R2_PUBLIC_BASE_URL?.replace(/\/+$/, '') || ''
+const productImageBaseUrl = r2PublicBaseUrl || `${CLIENT_URL}/product-image`
 
 const r2Client =
   r2Configured
@@ -80,6 +81,16 @@ function getProductImageKey(codBarras, extension = 'png') {
 function sendPlaceholder(res) {
   res.type('image/svg+xml')
   return res.send(placeholderSvg)
+}
+
+function attachProductImage(product) {
+  if (!product) return product
+
+  const hasCodBarras = product.codBarras !== undefined && product.codBarras !== null
+  const imageUrl =
+    product.imageUrl || (hasCodBarras ? `${productImageBaseUrl}/${product.codBarras}` : null)
+
+  return imageUrl ? { ...product, imageUrl } : product
 }
 
 function normalizeNumber(value) {
@@ -274,6 +285,7 @@ const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:5173')
   .trim()
   .replace(/\/+$/, '')
 const {
+  getProduct,
   getProducts,
   addProduct,
   updateProduct,
@@ -386,8 +398,12 @@ app.get('/api/admin/me', authMiddleware, (req, res) => {
 // LISTAR PRODUTOS (público)
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await getProducts()
-    return res.json(products)
+    const { featured } = req.query
+    const featuredOnly = typeof featured === 'string' && ['true', '1'].includes(featured)
+
+    const products = await getProducts({ featuredOnly })
+    const productsWithImages = products.map(attachProductImage)
+    return res.json(productsWithImages)
   } catch (err) {
     console.error('Erro ao listar produtos:', err)
     return res.status(500).json({ message: 'Erro ao listar produtos.' })
@@ -416,7 +432,7 @@ app.post('/api/products', authMiddleware, async (req, res) => {
       codBarras,
     })
 
-    return res.status(201).json(newProduct)
+    return res.status(201).json(attachProductImage(newProduct))
   } catch (err) {
     console.error('Erro ao criar produto:', err)
     return res.status(500).json({ message: 'Erro ao criar produto.' })
@@ -444,7 +460,7 @@ app.put('/api/products/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Produto não encontrado.' })
     }
 
-    return res.json(updated)
+    return res.json(attachProductImage(updated))
   } catch (err) {
     console.error('Erro ao atualizar produto:', err)
     return res.status(500).json({ message: 'Erro ao atualizar produto.' })
@@ -495,6 +511,7 @@ app.post(
       const createdProducts = []
       const updatedProducts = []
       const errors = []
+      const seenBarcodes = new Map()
 
       for (let i = 0; i < parsedRows.length; i += 1) {
         const row = parsedRows[i]
@@ -542,6 +559,14 @@ app.post(
         const subcategoryName = normalizeText(
           pickField(row, ['SubCategoria', 'Subcategoria', 'SUBCATEGORIA']),
         )
+
+        const featuredRaw = normalizeText(pickField(row, ['Destaque', 'DESTAQUE']))
+        const featured =
+          featuredRaw === ''
+            ? null
+            : ['sim', 's', 'true', '1', 'yes'].includes(
+                featuredRaw.toLowerCase(),
+              )
 
         if (!name || salePrice === null) {
           errors.push({
@@ -640,6 +665,18 @@ app.post(
           return (p.name || '').toLowerCase() === name.toLowerCase()
         })
 
+        if (codBarras) {
+          const seenRow = seenBarcodes.get(codBarras)
+          if (seenRow) {
+            errors.push({
+              row: rowNumber,
+              mensagem: `Código de barras repetido (já informado na linha ${seenRow}).`,
+            })
+            continue
+          }
+          seenBarcodes.set(codBarras, rowNumber)
+        }
+
         const descriptionDetailed = normalizeText(
           pickField(row, ['Descrição Detalhada', 'Descricao Detalhada']),
         )
@@ -650,7 +687,10 @@ app.post(
           price: salePrice,
           category: resolvedCategory,
           subcategory: resolvedSubcategory,
-          featured: true,
+          featured:
+            featured !== null
+              ? featured
+              : existingProduct?.featured ?? false,
           codBarras,
           costPrice,
         }
@@ -714,11 +754,7 @@ app.post(
 
     // opcional: validar se o produto existe
     try {
-      const products = await getProducts()
-      const numericId = Number(id)
-      const product = products.find(
-        (p) => Number(p.id) === numericId || Number(p.cod) === numericId,
-      )
+      const product = await getProduct(id)
 
       if (!product) {
         return res.status(404).json({ message: 'Produto não encontrado.' })
@@ -770,6 +806,11 @@ app.post(
       const imageUrl = r2PublicBaseUrl
         ? `${r2PublicBaseUrl}/${imageKey}`
         : `${CLIENT_URL}/product-image/${codBarras}`
+
+      const updated = await updateProduct(id, { imageUrl })
+      if (!updated) {
+        return res.status(404).json({ message: 'Produto não encontrado.' })
+      }
 
       return res.json({
         message: 'Imagem enviada com sucesso.',

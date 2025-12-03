@@ -48,10 +48,22 @@ async function getNextCod(collection) {
   return last ? Number(last.cod || last.id || 0) + 1 : 1
 }
 
-async function getProducts() {
+async function getProducts(options = {}) {
+  const { featuredOnly = false } = options
   const collection = await getCollection('products')
-  const products = await collection.find().sort({ cod: 1 }).toArray()
+  const query = featuredOnly ? { featured: true } : {}
+  const products = await collection.find(query).sort({ cod: 1 }).toArray()
   return products.map(serialize)
+}
+
+async function getProduct(id) {
+  const collection = await getCollection('products')
+  const query = buildProductQuery(id)
+
+  if (!query) return null
+
+  const product = await collection.findOne(query)
+  return serialize(product)
 }
 
 async function addProduct(product) {
@@ -72,6 +84,7 @@ async function addProduct(product) {
     category: product.category || '',
     subcategory: product.subcategory || '',
     featured: product.featured !== false,
+    imageUrl: product.imageUrl || '',
     createdAt: new Date().toISOString(),
   }
 
@@ -98,6 +111,7 @@ async function updateProduct(id, updates) {
       ? { subcategory: updates.subcategory }
       : {}),
     ...(updates.codBarras !== undefined ? { codBarras: updates.codBarras } : {}),
+    ...(updates.imageUrl !== undefined ? { imageUrl: updates.imageUrl } : {}),
     ...(Object.prototype.hasOwnProperty.call(updates, 'costPrice')
       ? {
           costPrice:
@@ -128,6 +142,7 @@ async function deleteProduct(id) {
 }
 
 module.exports = {
+  getProduct,
   getProducts,
   addProduct,
   updateProduct,
