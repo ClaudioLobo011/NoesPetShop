@@ -49,8 +49,32 @@ const r2Client =
       })
     : null
 
-function getProductImageKey(codBarras) {
-  return `products/${codBarras}.png`
+function getImageExtension(mimetype, originalname = '') {
+  const mimeToExt = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'image/bmp': 'bmp',
+  }
+
+  if (mimetype && mimeToExt[mimetype]) {
+    return mimeToExt[mimetype]
+  }
+
+  const extFromName = path.extname(originalname || '').replace(/^\./, '')
+  if (extFromName) return extFromName.toLowerCase()
+
+  return 'png'
+}
+
+function getProductImageKey(codBarras, extension = 'png') {
+  const cleanCode = String(codBarras ?? '')
+    .trim()
+    .replace(/\s+/g, '')
+
+  return `products/${cleanCode}.${extension}`
 }
 
 function sendPlaceholder(res) {
@@ -267,6 +291,7 @@ const {
   updatePromotion,
   deletePromotion,
 } = require('./promotionsStore')
+const { connectToDatabase } = require('./db')
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -305,6 +330,15 @@ app.use(cors({
 }))
 app.use(express.json())
 app.use(cookieParser())
+
+connectToDatabase()
+  .then(() => {
+    console.log('Conectado ao MongoDB.')
+  })
+  .catch((err) => {
+    console.error('Falha ao conectar ao MongoDB:', err)
+    process.exit(1)
+  })
 
 // LOGIN ADMIN
 app.post('/api/admin/login', async (req, res) => {
@@ -714,7 +748,11 @@ app.post(
       })
     }
 
-    const imageKey = getProductImageKey(codBarras)
+    const imageExtension = getImageExtension(
+      req.file.mimetype,
+      req.file.originalname,
+    )
+    const imageKey = getProductImageKey(codBarras, imageExtension)
 
     try {
       await r2Client.send(
@@ -722,7 +760,10 @@ app.post(
           Bucket: R2_BUCKET,
           Key: imageKey,
           Body: req.file.buffer,
-          ContentType: req.file.mimetype || 'image/png',
+          ContentType:
+            req.file.mimetype ||
+            `image/${imageExtension === 'jpg' ? 'jpeg' : imageExtension}` ||
+            'image/png',
         }),
       )
 
@@ -747,33 +788,51 @@ app.post(
 app.get('/product-image/:codBarras', async (req, res) => {
   const { codBarras } = req.params
 
+  if (!codBarras) {
+    return sendPlaceholder(res)
+  }
+
   if (!r2Configured || !r2Client) {
     return sendPlaceholder(res)
   }
 
-  const imageKey = getProductImageKey(codBarras)
+  const imageExtensions = ['png', 'jpg', 'jpeg', 'webp', 'gif']
 
-  try {
-    const response = await r2Client.send(
-      new GetObjectCommand({ Bucket: R2_BUCKET, Key: imageKey }),
-    )
+  for (const ext of imageExtensions) {
+    const imageKey = getProductImageKey(codBarras, ext)
 
-    if (!response || !response.Body) {
-      return sendPlaceholder(res)
-    }
+    try {
+      const response = await r2Client.send(
+        new GetObjectCommand({ Bucket: R2_BUCKET, Key: imageKey }),
+      )
 
-    res.setHeader('Content-Type', response.ContentType || 'image/png')
-    response.Body.pipe(res)
-    response.Body.on('error', (streamErr) => {
-      console.error('Erro ao transmitir imagem do R2:', streamErr)
-      if (!res.headersSent) {
-        sendPlaceholder(res)
+      if (!response || !response.Body) {
+        continue
       }
-    })
-  } catch (err) {
-    console.error('Erro ao buscar imagem no Cloudflare R2:', err)
-    return sendPlaceholder(res)
+
+      res.setHeader(
+        'Content-Type',
+        response.ContentType || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
+      )
+      response.Body.pipe(res)
+      response.Body.on('error', (streamErr) => {
+        console.error('Erro ao transmitir imagem do R2:', streamErr)
+        if (!res.headersSent) {
+          sendPlaceholder(res)
+        }
+      })
+      return
+    } catch (err) {
+      if (err?.Code === 'NoSuchKey' || err?.$metadata?.httpStatusCode === 404) {
+        continue
+      }
+
+      console.error('Erro ao buscar imagem no Cloudflare R2:', err)
+      break
+    }
   }
+
+  return sendPlaceholder(res)
 })
 
 // ================== CATEGORIAS (Categoria + Subcategoria) ==================

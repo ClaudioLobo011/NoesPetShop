@@ -94,6 +94,18 @@ function AdminPage() {
     setSuccess('')
   }
 
+  function normalizeId(value) {
+    if (value === null || value === undefined) return ''
+    return typeof value === 'string' ? value.trim() : String(value)
+  }
+
+  function getProductId(product) {
+    if (!product) return ''
+    const value =
+      product._id ?? product.id ?? product.cod ?? product.codBarras ?? ''
+    return normalizeId(value)
+  }
+
   async function fetchProducts() {
     setLoadingProducts(true)
     clearMessages()
@@ -388,7 +400,7 @@ function AdminPage() {
     setSelectedPromotionProduct(product)
     setPromotionForm((prev) => ({
       ...prev,
-      productId: product.id ? String(product.id) : '',
+      productId: getProductId(product) ? String(getProductId(product)) : '',
     }))
     setProductSearchModalOpen(false)
     setPromotionProductSearch('')
@@ -527,8 +539,9 @@ function AdminPage() {
           throw new Error(data.message || 'Erro ao atualizar produto.')
         }
 
+        const updatedId = getProductId(data)
         setProducts((prev) =>
-          prev.map((p) => (p.id === data.id ? data : p)),
+          prev.map((p) => (getProductId(p) === updatedId ? data : p)),
         )
         resetProductForm()
         setSuccess('Produto atualizado com sucesso.')
@@ -542,7 +555,7 @@ function AdminPage() {
   }
 
   function handleEditProduct(product) {
-    setEditingProductId(product.id)
+    setEditingProductId(getProductId(product))
     setProductForm({
       name: product.name || '',
       description: product.description || '',
@@ -573,7 +586,7 @@ function AdminPage() {
         throw new Error(data.message || 'Erro ao excluir produto.')
       }
 
-      setProducts((prev) => prev.filter((p) => p.id !== id))
+      setProducts((prev) => prev.filter((p) => getProductId(p) !== id))
       if (editingProductId === id) resetProductForm()
       setSuccess('Produto excluído com sucesso.')
     } catch (err) {
@@ -597,7 +610,7 @@ function AdminPage() {
     try {
       clearMessages()
       const res = await fetch(
-        `${API_URL}/api/products/${product.id}/image`,
+        `${API_URL}/api/products/${getProductId(product)}/image`,
         {
           method: 'POST',
           credentials: 'include',
@@ -635,7 +648,8 @@ function AdminPage() {
 
   function mapProductToBulkRow(product) {
     return {
-      id: product.id,
+      _id: normalizeId(product._id),
+      id: getProductId(product),
       cod: product.cod,
       name: product.name || '',
       description: product.description || '',
@@ -666,7 +680,8 @@ function AdminPage() {
   }
 
   function hasBulkChanges(row) {
-    const original = products.find((p) => p.id === row.id)
+    const rowId = getProductId(row)
+    const original = products.find((p) => getProductId(p) === rowId)
     if (!original) return true
 
     const originalMapped = mapProductToBulkRow(original)
@@ -739,7 +754,7 @@ function AdminPage() {
   function handleBulkChange(id, field, value) {
     setBulkRows((prev) =>
       prev.map((row) =>
-        row.id === id
+        getProductId(row) === id
           ? {
               ...row,
               [field]: field === 'featured' ? value : value,
@@ -784,7 +799,13 @@ function AdminPage() {
   }
 
   async function submitBulkRow(row, parsedPrice, parsedCost) {
-    const res = await fetch(`${API_URL}/api/products/${row.id}`, {
+    const productId = getProductId(row)
+
+    if (!productId) {
+      throw new Error('Produto sem identificador válido para salvar.')
+    }
+
+    const res = await fetch(`${API_URL}/api/products/${productId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -805,9 +826,14 @@ function AdminPage() {
       throw new Error(data.message || 'Erro ao salvar alterações em massa.')
     }
 
-    setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+    const updatedId = getProductId(data)
+    setProducts((prev) =>
+      prev.map((p) => (getProductId(p) === updatedId ? data : p)),
+    )
     setBulkRows((prev) =>
-      prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
+      prev.map((r) =>
+        getProductId(r) === updatedId ? mapProductToBulkRow(data) : r,
+      ),
     )
   }
 
@@ -821,7 +847,8 @@ function AdminPage() {
     }
 
     const { parsedPrice, parsedCost } = validation
-    toggleBulkSaving(row.id, true)
+    const rowId = getProductId(row)
+    toggleBulkSaving(rowId, true)
 
     try {
       await submitBulkRow(row, parsedPrice, parsedCost)
@@ -830,7 +857,7 @@ function AdminPage() {
       console.error(err)
       setError(err.message)
     } finally {
-      toggleBulkSaving(row.id, false)
+      toggleBulkSaving(rowId, false)
     }
   }
 
@@ -855,8 +882,9 @@ function AdminPage() {
         }
 
         const { parsedPrice, parsedCost } = validation
-        toggleBulkSaving(row.id, true)
-        currentlySaving.add(row.id)
+        const rowId = getProductId(row)
+        toggleBulkSaving(rowId, true)
+        currentlySaving.add(rowId)
         await submitBulkRow(row, parsedPrice, parsedCost)
       }
 
@@ -1306,7 +1334,7 @@ function AdminPage() {
                           <button
                             type="button"
                             className="link-button small danger"
-                            onClick={() => handleDeleteProduct(p.id)}
+                            onClick={() => handleDeleteProduct(getProductId(p))}
                           >
                             Excluir
                           </button>
@@ -1856,16 +1884,17 @@ function AdminPage() {
                       ) : (
                         <div className="bulk-edit-body">
                           {filteredBulkRows.map((row) => {
-                            const saving = bulkSavingIds.has(row.id)
+                            const rowId = getProductId(row)
+                            const saving = bulkSavingIds.has(rowId)
                             return (
-                              <div key={row.id} className="bulk-edit-row">
+                              <div key={rowId} className="bulk-edit-row">
                                 <div className="bulk-edit-cell">
                                   <input
                                     type="text"
                                     value={row.name}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'name',
                                         e.target.value,
                                       )
@@ -1883,7 +1912,7 @@ function AdminPage() {
                                     value={row.description}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'description',
                                         e.target.value,
                                       )
@@ -1900,7 +1929,7 @@ function AdminPage() {
                                     value={row.costPrice}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'costPrice',
                                         e.target.value,
                                       )
@@ -1916,7 +1945,7 @@ function AdminPage() {
                                     value={row.price}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'price',
                                         e.target.value,
                                       )
@@ -1932,7 +1961,7 @@ function AdminPage() {
                                     value={row.category}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'category',
                                         e.target.value,
                                       )
@@ -1947,7 +1976,7 @@ function AdminPage() {
                                     value={row.subcategory}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'subcategory',
                                         e.target.value,
                                       )
@@ -1971,7 +2000,7 @@ function AdminPage() {
                                             handleUploadImage(row, file, () => {
                                               setBulkRows((prev) =>
                                                 prev.map((r) =>
-                                                  r.id === row.id
+                                                  getProductId(r) === rowId
                                                     ? { ...r, hasImage: true }
                                                     : r,
                                                 ),
@@ -1995,7 +2024,7 @@ function AdminPage() {
                                     checked={row.featured}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'featured',
                                         e.target.checked,
                                       )

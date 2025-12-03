@@ -1,45 +1,62 @@
-// server/productsStore.js
-const fs = require('fs').promises
-const path = require('path')
+const { ObjectId } = require('mongodb')
 
-const DATA_DIR = path.join(__dirname, 'data')
-const PRODUCTS_FILE = path.join(DATA_DIR, 'products.json')
+const { getCollection } = require('./db')
 
-async function ensureFile() {
-  try {
-    await fs.access(PRODUCTS_FILE)
-  } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true })
-    await fs.writeFile(PRODUCTS_FILE, '[]', 'utf8')
+function buildProductQuery(id) {
+  const or = []
+  const trimmed = typeof id === 'string' ? id.trim() : id
+  const numericId = Number(trimmed)
+
+  if (Number.isFinite(numericId)) {
+    or.push({ id: numericId }, { cod: numericId })
   }
+
+  if (trimmed !== undefined && trimmed !== null && trimmed !== '') {
+    or.push({ id: trimmed }, { cod: trimmed }, { codBarras: trimmed })
+  }
+
+  if (ObjectId.isValid(trimmed)) {
+    or.push({ _id: new ObjectId(trimmed) })
+  }
+
+  return or.length ? { $or: or } : null
+}
+
+function serialize(doc) {
+  if (!doc) return null
+  const { _id, ...rest } = doc
+  const normalizedId =
+    rest.id !== undefined && rest.id !== null
+      ? rest.id
+      : rest.cod !== undefined && rest.cod !== null
+        ? rest.cod
+        : _id
+
+  return {
+    ...rest,
+    ...(normalizedId !== undefined && normalizedId !== null
+      ? { id: normalizedId }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(doc, '_id')
+      ? { _id: _id ? _id.toString() : '' }
+      : {}),
+  }
+}
+
+async function getNextCod(collection) {
+  const [last] = await collection.find().sort({ cod: -1 }).limit(1).toArray()
+  return last ? Number(last.cod || last.id || 0) + 1 : 1
 }
 
 async function getProducts() {
-  await ensureFile()
-  const data = await fs.readFile(PRODUCTS_FILE, 'utf8')
-  try {
-    const parsed = JSON.parse(data)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-async function saveProducts(products) {
-  await fs.mkdir(DATA_DIR, { recursive: true })
-  await fs.writeFile(PRODUCTS_FILE, JSON.stringify(products, null, 2), 'utf8')
+  const collection = await getCollection('products')
+  const products = await collection.find().sort({ cod: 1 }).toArray()
+  return products.map(serialize)
 }
 
 async function addProduct(product) {
-  const products = await getProducts()
-
-  // próximo código sequencial
-  const nextCod =
-    products.length > 0
-      ? Math.max(
-          ...products.map((p) => Number(p.cod || p.id) || 0),
-        ) + 1
-      : 1
+  const collection = await getCollection('products')
+  const nextCod = await getNextCod(collection)
 
   const newProduct = {
     id: nextCod,
@@ -58,65 +75,56 @@ async function addProduct(product) {
     createdAt: new Date().toISOString(),
   }
 
-  products.push(newProduct)
-  await saveProducts(products)
-  return newProduct
+  const result = await collection.insertOne(newProduct)
+  return serialize({ _id: result.insertedId, ...newProduct })
 }
 
 async function updateProduct(id, updates) {
-  const products = await getProducts()
-  const numericId = Number(id)
+  const collection = await getCollection('products')
+  const query = buildProductQuery(id)
 
-  const index = products.findIndex(
-    (p) => Number(p.id) === numericId || Number(p.cod) === numericId,
-  )
+  if (!query) return null
 
-  if (index === -1) return null
-
-  const current = products[index]
-
-  const updated = {
-    ...current,
-    name: updates.name ?? current.name,
-    description: updates.description ?? current.description,
-    price:
-      updates.price !== undefined && updates.price !== null
-        ? Number(updates.price)
-        : current.price,
-    category: updates.category ?? current.category,
-    subcategory: updates.subcategory ?? current.subcategory,
-    codBarras: updates.codBarras ?? current.codBarras,
-    costPrice:
-      Object.prototype.hasOwnProperty.call(updates, 'costPrice')
-        ? updates.costPrice !== null && updates.costPrice !== undefined
-          ? Number(updates.costPrice) || 0
-          : null
-        : current.costPrice ?? null,
-    featured:
-      typeof updates.featured === 'boolean'
-        ? updates.featured
-        : current.featured,
+  const updateData = {
+    ...(updates.name !== undefined ? { name: updates.name } : {}),
+    ...(updates.description !== undefined
+      ? { description: updates.description }
+      : {}),
+    ...(updates.price !== undefined && updates.price !== null
+      ? { price: Number(updates.price) }
+      : {}),
+    ...(updates.category !== undefined ? { category: updates.category } : {}),
+    ...(updates.subcategory !== undefined
+      ? { subcategory: updates.subcategory }
+      : {}),
+    ...(updates.codBarras !== undefined ? { codBarras: updates.codBarras } : {}),
+    ...(Object.prototype.hasOwnProperty.call(updates, 'costPrice')
+      ? {
+          costPrice:
+            updates.costPrice !== null && updates.costPrice !== undefined
+              ? Number(updates.costPrice) || 0
+              : null,
+        }
+      : {}),
+    ...(typeof updates.featured === 'boolean'
+      ? { featured: updates.featured }
+      : {}),
     updatedAt: new Date().toISOString(),
   }
 
-  products[index] = updated
-  await saveProducts(products)
-  return updated
+  const result = await collection.findOneAndUpdate(query, { $set: updateData }, { returnDocument: 'after' })
+
+  return serialize(result.value)
 }
 
 async function deleteProduct(id) {
-  const products = await getProducts()
-  const numericId = Number(id)
+  const collection = await getCollection('products')
+  const query = buildProductQuery(id)
 
-  const index = products.findIndex(
-    (p) => Number(p.id) === numericId || Number(p.cod) === numericId,
-  )
+  if (!query) return false
 
-  if (index === -1) return false
-
-  products.splice(index, 1)
-  await saveProducts(products)
-  return true
+  const result = await collection.deleteOne(query)
+  return result.deletedCount > 0
 }
 
 module.exports = {
@@ -124,5 +132,4 @@ module.exports = {
   addProduct,
   updateProduct,
   deleteProduct,
-  saveProducts,
 }
