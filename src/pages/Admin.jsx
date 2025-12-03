@@ -125,8 +125,25 @@ function AdminPage() {
   function getProductId(product) {
     if (!product) return ''
     const value =
-      product._id ?? product.id ?? product.cod ?? product.codBarras ?? ''
+      product.id ?? product.cod ?? product._id ?? product.codBarras ?? ''
     return normalizeId(value)
+  }
+
+  function getProductIdentifiers(product) {
+    const identifiers = []
+    const add = (value) => {
+      const normalized = normalizeId(value)
+      if (normalized && !identifiers.includes(normalized)) {
+        identifiers.push(normalized)
+      }
+    }
+
+    add(product?.id)
+    add(product?.cod)
+    add(product?._id)
+    add(product?.codBarras)
+
+    return identifiers
   }
 
   function getProductLabel(product) {
@@ -831,42 +848,58 @@ function AdminPage() {
   }
 
   async function submitBulkRow(row, parsedPrice, parsedCost) {
-    const productId = getProductId(row)
+    const identifiers = getProductIdentifiers(row)
 
-    if (!productId) {
+    if (!identifiers.length) {
       throw new Error('Produto sem identificador válido para salvar.')
     }
 
-    const res = await fetch(`${API_URL}/api/products/${productId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        name: row.name,
-        description: row.description,
-        price: parsedPrice,
-        category: row.category,
-        subcategory: row.subcategory,
-        costPrice: parsedCost,
-        featured: !!row.featured,
-        codBarras: row.codBarras,
-      }),
-    })
+    let lastError = null
 
-    const data = await res.json()
-    if (!res.ok) {
-      throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+    const trySave = async (productId) => {
+      const res = await fetch(`${API_URL}/api/products/${productId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          name: row.name,
+          description: row.description,
+          price: parsedPrice,
+          category: row.category,
+          subcategory: row.subcategory,
+          costPrice: parsedCost,
+          featured: !!row.featured,
+          codBarras: row.codBarras,
+        }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+      }
+
+      const updatedId = getProductId(data)
+      setProducts((prev) =>
+        prev.map((p) => (getProductId(p) === updatedId ? data : p)),
+      )
+      setBulkRows((prev) =>
+        prev.map((r) =>
+          getProductId(r) === updatedId ? mapProductToBulkRow(data) : r,
+        ),
+      )
     }
 
-    const updatedId = getProductId(data)
-    setProducts((prev) =>
-      prev.map((p) => (getProductId(p) === updatedId ? data : p)),
-    )
-    setBulkRows((prev) =>
-      prev.map((r) =>
-        getProductId(r) === updatedId ? mapProductToBulkRow(data) : r,
-      ),
-    )
+    for (const productId of identifiers) {
+      try {
+        await trySave(productId)
+        return
+      } catch (err) {
+        console.error(`Erro ao salvar ${getProductLabel(row)} com id ${productId}`)
+        lastError = err
+      }
+    }
+
+    throw lastError || new Error('Erro ao salvar alterações em massa.')
   }
 
   async function handleBulkSave(row) {
