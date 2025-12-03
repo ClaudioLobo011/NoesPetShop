@@ -32,6 +32,7 @@ function AdminPage() {
   // ---- ALTERAÇÃO EM MASSA ----
   const [bulkRows, setBulkRows] = useState([])
   const [bulkSavingIds, setBulkSavingIds] = useState(() => new Set())
+  const [bulkSavingAll, setBulkSavingAll] = useState(false)
   const [bulkNameFilter, setBulkNameFilter] = useState('')
   const [bulkSortColumn, setBulkSortColumn] = useState('name')
   const [bulkSortDirection, setBulkSortDirection] = useState('asc')
@@ -658,6 +659,34 @@ function AdminPage() {
     setBulkRows(products.map(mapProductToBulkRow))
   }, [products])
 
+  function normalizeBulkValue(value) {
+    if (value === null || value === undefined) return ''
+    if (typeof value === 'boolean') return value ? 'true' : 'false'
+    return String(value).trim()
+  }
+
+  function hasBulkChanges(row) {
+    const original = products.find((p) => p.id === row.id)
+    if (!original) return true
+
+    const originalMapped = mapProductToBulkRow(original)
+    const fieldsToCompare = [
+      'name',
+      'description',
+      'costPrice',
+      'price',
+      'category',
+      'subcategory',
+      'featured',
+      'codBarras',
+    ]
+
+    return fieldsToCompare.some(
+      (field) =>
+        normalizeBulkValue(row[field]) !== normalizeBulkValue(originalMapped[field]),
+    )
+  }
+
   const filteredBulkRows = useMemo(() => {
     const term = bulkNameFilter.trim().toLowerCase()
     const rows = term
@@ -732,9 +761,7 @@ function AdminPage() {
     })
   }
 
-  async function handleBulkSave(row) {
-    clearMessages()
-
+  function prepareBulkPayload(row) {
     const parsedPrice = Number(String(row.price).replace(',', '.'))
     const parsedCost =
       row.costPrice === '' || row.costPrice === null
@@ -742,54 +769,104 @@ function AdminPage() {
         : Number(String(row.costPrice).replace(',', '.'))
 
     if (!row.name) {
-      setError('Nome é obrigatório na alteração em massa.')
-      return
+      return { error: 'Nome é obrigatório na alteração em massa.' }
     }
 
     if (!Number.isFinite(parsedPrice)) {
-      setError('Informe um preço válido para salvar a linha.')
-      return
+      return { error: 'Informe um preço válido para salvar a linha.' }
     }
 
     if (row.costPrice !== '' && row.costPrice !== null && !Number.isFinite(parsedCost)) {
-      setError('Informe um custo válido ou deixe em branco.')
+      return { error: 'Informe um custo válido ou deixe em branco.' }
+    }
+
+    return { parsedPrice, parsedCost }
+  }
+
+  async function submitBulkRow(row, parsedPrice, parsedCost) {
+    const res = await fetch(`${API_URL}/api/products/${row.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        name: row.name,
+        description: row.description,
+        price: parsedPrice,
+        category: row.category,
+        subcategory: row.subcategory,
+        costPrice: parsedCost,
+        featured: !!row.featured,
+        codBarras: row.codBarras,
+      }),
+    })
+
+    const data = await res.json()
+    if (!res.ok) {
+      throw new Error(data.message || 'Erro ao salvar alterações em massa.')
+    }
+
+    setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
+    setBulkRows((prev) =>
+      prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
+    )
+  }
+
+  async function handleBulkSave(row) {
+    clearMessages()
+
+    const validation = prepareBulkPayload(row)
+    if (validation.error) {
+      setError(validation.error)
       return
     }
 
+    const { parsedPrice, parsedCost } = validation
     toggleBulkSaving(row.id, true)
 
     try {
-      const res = await fetch(`${API_URL}/api/products/${row.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({
-          name: row.name,
-          description: row.description,
-          price: parsedPrice,
-          category: row.category,
-          subcategory: row.subcategory,
-          costPrice: parsedCost,
-          featured: !!row.featured,
-          codBarras: row.codBarras,
-        }),
-      })
-
-      const data = await res.json()
-      if (!res.ok) {
-        throw new Error(data.message || 'Erro ao salvar alterações em massa.')
-      }
-
-      setProducts((prev) => prev.map((p) => (p.id === data.id ? data : p)))
-      setBulkRows((prev) =>
-        prev.map((r) => (r.id === data.id ? mapProductToBulkRow(data) : r)),
-      )
+      await submitBulkRow(row, parsedPrice, parsedCost)
       setSuccess('Linha atualizada com sucesso.')
     } catch (err) {
       console.error(err)
       setError(err.message)
     } finally {
       toggleBulkSaving(row.id, false)
+    }
+  }
+
+  async function handleBulkSaveAll() {
+    clearMessages()
+
+    const rowsToSave = bulkRows.filter(hasBulkChanges)
+    if (rowsToSave.length === 0) {
+      setSuccess('Nenhuma alteração para salvar.')
+      return
+    }
+
+    setBulkSavingAll(true)
+    const currentlySaving = new Set()
+
+    try {
+      for (const row of rowsToSave) {
+        const validation = prepareBulkPayload(row)
+        if (validation.error) {
+          setError(validation.error)
+          return
+        }
+
+        const { parsedPrice, parsedCost } = validation
+        toggleBulkSaving(row.id, true)
+        currentlySaving.add(row.id)
+        await submitBulkRow(row, parsedPrice, parsedCost)
+      }
+
+      setSuccess('Alterações em massa salvas com sucesso.')
+    } catch (err) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setBulkSavingAll(false)
+      currentlySaving.forEach((id) => toggleBulkSaving(id, false))
     }
   }
 
@@ -1515,6 +1592,17 @@ function AdminPage() {
                         onChange={(e) => setBulkNameFilter(e.target.value)}
                       />
                     </label>
+
+                    <div className="bulk-actions">
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={handleBulkSaveAll}
+                        disabled={bulkSavingAll || loadingProducts}
+                      >
+                        {bulkSavingAll ? 'Salvando todos...' : 'Salvar todos'}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bulk-edit-scroll">

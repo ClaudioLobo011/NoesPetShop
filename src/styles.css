@@ -1073,6 +1073,11 @@ body {
   margin-bottom: 0.75rem;
 }
 
+.bulk-actions {
+  display: flex;
+  align-items: flex-end;
+}
+
 .bulk-filter-input {
   display: flex;
   flex-direction: column;
