@@ -129,21 +129,30 @@ function AdminPage() {
     return normalizeId(value)
   }
 
-  function getProductIdentifiers(product) {
-    const identifiers = []
+  function buildIdentifiers(source, keys) {
+    const list = []
     const add = (value) => {
       const normalized = normalizeId(value)
-      if (normalized && !identifiers.includes(normalized)) {
-        identifiers.push(normalized)
+      if (normalized && !list.includes(normalized)) {
+        list.push(normalized)
       }
     }
 
-    add(product?.id)
-    add(product?.cod)
-    add(product?._id)
-    add(product?.codBarras)
+    keys.forEach((key) => add(source?.[key]))
+    return list
+  }
 
-    return identifiers
+  function getProductIdentifiers(product) {
+    const persisted = Array.isArray(product?.originalIdentifiers)
+      ? product.originalIdentifiers
+      : []
+
+    const dynamic = buildIdentifiers(product, ['id', 'cod', '_id', 'codBarras'])
+    const combined = [...persisted, ...dynamic]
+
+    return combined
+      .map((value) => normalizeId(value))
+      .filter((value, index, arr) => value && arr.indexOf(value) === index)
   }
 
   function getProductLabel(product) {
@@ -700,6 +709,12 @@ function AdminPage() {
       _id: normalizeId(product._id),
       id: getProductId(product),
       cod: product.cod,
+      originalIdentifiers: buildIdentifiers(product, [
+        'id',
+        'cod',
+        '_id',
+        'codBarras',
+      ]),
       name: product.name || '',
       description: product.description || '',
       costPrice:
