@@ -1,61 +1,40 @@
-const fs = require('fs').promises
-const path = require('path')
+const { getCollection } = require('./db')
 
-const DATA_DIR = path.join(__dirname, 'data')
-const PROMOTIONS_FILE = path.join(DATA_DIR, 'promotions.json')
+function serialize(doc) {
+  if (!doc) return null
+  const { _id, ...rest } = doc
+  return rest
+}
 
-async function ensureFile() {
-  try {
-    await fs.access(PROMOTIONS_FILE)
-  } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true })
-    await fs.writeFile(PROMOTIONS_FILE, '[]', 'utf8')
-  }
+async function getNextCod(collection) {
+  const [last] = await collection.find().sort({ cod: -1 }).limit(1).toArray()
+  return last ? Number(last.cod || last.id || 0) + 1 : 1
 }
 
 async function getPromotions() {
-  await ensureFile()
-  const data = await fs.readFile(PROMOTIONS_FILE, 'utf8')
-  try {
-    const parsed = JSON.parse(data)
-    return Array.isArray(parsed)
-      ? parsed.map((p) => ({
-          ...p,
-          productId:
-            p.productId !== undefined && p.productId !== null
-              ? Number(p.productId)
-              : null,
-        }))
-      : []
-  } catch {
-    return []
-  }
-}
+  const collection = await getCollection('promotions')
+  const promotions = await collection.find().sort({ cod: 1 }).toArray()
 
-async function savePromotions(promotions) {
-  await fs.mkdir(DATA_DIR, { recursive: true })
-  await fs.writeFile(
-    PROMOTIONS_FILE,
-    JSON.stringify(promotions, null, 2),
-    'utf8',
+  return promotions.map((p) =>
+    serialize({
+      ...p,
+      productId:
+        p.productId !== undefined && p.productId !== null
+          ? Number(p.productId)
+          : null,
+    }),
   )
 }
 
 async function addPromotion(promo) {
-  const promotions = await getPromotions()
-
-  const nextCod =
-    promotions.length > 0
-      ? Math.max(
-          ...promotions.map((p) => Number(p.cod || p.id) || 0),
-        ) + 1
-      : 1
+  const collection = await getCollection('promotions')
+  const nextCod = await getNextCod(collection)
 
   const newPromotion = {
     id: nextCod,
     cod: nextCod,
     productId: Number(promo.productId),
-    type: promo.type, // 'percentage' | 'takepay' | 'above'
+    type: promo.type,
     percent:
       promo.percent !== undefined && promo.percent !== null
         ? Number(promo.percent)
@@ -76,68 +55,53 @@ async function addPromotion(promo) {
     createdAt: new Date().toISOString(),
   }
 
-  promotions.push(newPromotion)
-  await savePromotions(promotions)
-  return newPromotion
+  await collection.insertOne(newPromotion)
+  return serialize(newPromotion)
 }
 
 async function updatePromotion(id, updates) {
-  const promotions = await getPromotions()
+  const collection = await getCollection('promotions')
   const numericId = Number(id)
 
-  const index = promotions.findIndex(
-    (p) => Number(p.id) === numericId || Number(p.cod) === numericId,
-  )
-
-  if (index === -1) return null
-
-  const current = promotions[index]
-
-  const updated = {
-    ...current,
-    productId:
-      updates.productId !== undefined && updates.productId !== null
-        ? Number(updates.productId)
-        : current.productId,
-    type: updates.type ?? current.type,
-    percent:
-      updates.percent !== undefined && updates.percent !== null
-        ? Number(updates.percent)
-        : current.percent,
-    takeQty:
-      updates.takeQty !== undefined && updates.takeQty !== null
-        ? Number(updates.takeQty)
-        : current.takeQty,
-    payQty:
-      updates.payQty !== undefined && updates.payQty !== null
-        ? Number(updates.payQty)
-        : current.payQty,
-    minQty:
-      updates.minQty !== undefined && updates.minQty !== null
-        ? Number(updates.minQty)
-        : current.minQty,
-    active:
-      typeof updates.active === 'boolean' ? updates.active : current.active,
+  const updateData = {
+    ...(updates.productId !== undefined && updates.productId !== null
+      ? { productId: Number(updates.productId) }
+      : {}),
+    ...(updates.type !== undefined ? { type: updates.type } : {}),
+    ...(updates.percent !== undefined && updates.percent !== null
+      ? { percent: Number(updates.percent) }
+      : {}),
+    ...(updates.takeQty !== undefined && updates.takeQty !== null
+      ? { takeQty: Number(updates.takeQty) }
+      : {}),
+    ...(updates.payQty !== undefined && updates.payQty !== null
+      ? { payQty: Number(updates.payQty) }
+      : {}),
+    ...(updates.minQty !== undefined && updates.minQty !== null
+      ? { minQty: Number(updates.minQty) }
+      : {}),
+    ...(typeof updates.active === 'boolean' ? { active: updates.active } : {}),
     updatedAt: new Date().toISOString(),
   }
 
-  promotions[index] = updated
-  await savePromotions(promotions)
-  return updated
+  const result = await collection.findOneAndUpdate(
+    { $or: [{ id: numericId }, { cod: numericId }] },
+    { $set: updateData },
+    { returnDocument: 'after' },
+  )
+
+  return serialize(result.value)
 }
 
 async function deletePromotion(id) {
-  const promotions = await getPromotions()
+  const collection = await getCollection('promotions')
   const numericId = Number(id)
 
-  const remaining = promotions.filter(
-    (p) => Number(p.id) !== numericId && Number(p.cod) !== numericId,
-  )
+  const result = await collection.deleteOne({
+    $or: [{ id: numericId }, { cod: numericId }],
+  })
 
-  if (remaining.length === promotions.length) return false
-
-  await savePromotions(remaining)
-  return true
+  return result.deletedCount > 0
 }
 
 module.exports = {
