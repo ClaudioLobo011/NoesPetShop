@@ -46,8 +46,9 @@ function ProductCard({ product }) {
   if (!product) return null
 
   const imageUrl =
-    product.codBarras && !imgError
-      ? `${IMAGE_BASE_URL}/${product.codBarras}`
+    !imgError
+      ? product.imageUrl ||
+        (product.codBarras ? `${IMAGE_BASE_URL}/${product.codBarras}` : null)
       : null
 
   const displayImage = imageUrl || placeholderImage

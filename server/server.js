@@ -36,6 +36,7 @@ const r2Configured =
   Boolean(R2_REGION)
 
 const r2PublicBaseUrl = R2_PUBLIC_BASE_URL?.replace(/\/+$/, '') || ''
+const productImageBaseUrl = r2PublicBaseUrl || `${CLIENT_URL}/product-image`
 
 const r2Client =
   r2Configured
@@ -80,6 +81,16 @@ function getProductImageKey(codBarras, extension = 'png') {
 function sendPlaceholder(res) {
   res.type('image/svg+xml')
   return res.send(placeholderSvg)
+}
+
+function attachProductImage(product) {
+  if (!product) return product
+
+  const hasCodBarras = product.codBarras !== undefined && product.codBarras !== null
+  const imageUrl =
+    product.imageUrl || (hasCodBarras ? `${productImageBaseUrl}/${product.codBarras}` : null)
+
+  return imageUrl ? { ...product, imageUrl } : product
 }
 
 function normalizeNumber(value) {
@@ -390,7 +401,8 @@ app.get('/api/products', async (req, res) => {
     const featuredOnly = typeof featured === 'string' && ['true', '1'].includes(featured)
 
     const products = await getProducts({ featuredOnly })
-    return res.json(products)
+    const productsWithImages = products.map(attachProductImage)
+    return res.json(productsWithImages)
   } catch (err) {
     console.error('Erro ao listar produtos:', err)
     return res.status(500).json({ message: 'Erro ao listar produtos.' })
@@ -419,7 +431,7 @@ app.post('/api/products', authMiddleware, async (req, res) => {
       codBarras,
     })
 
-    return res.status(201).json(newProduct)
+    return res.status(201).json(attachProductImage(newProduct))
   } catch (err) {
     console.error('Erro ao criar produto:', err)
     return res.status(500).json({ message: 'Erro ao criar produto.' })
@@ -447,7 +459,7 @@ app.put('/api/products/:id', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'Produto não encontrado.' })
     }
 
-    return res.json(updated)
+    return res.json(attachProductImage(updated))
   } catch (err) {
     console.error('Erro ao atualizar produto:', err)
     return res.status(500).json({ message: 'Erro ao atualizar produto.' })
