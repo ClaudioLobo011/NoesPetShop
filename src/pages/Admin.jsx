@@ -96,7 +96,9 @@ function AdminPage() {
 
   function getProductId(product) {
     if (!product) return ''
-    return product.id ?? product.cod ?? product._id ?? ''
+    const value = product.id ?? product.cod ?? product._id ?? ''
+    if (value === null || value === undefined) return ''
+    return typeof value === 'string' ? value.trim() : String(value)
   }
 
   async function fetchProducts() {
@@ -640,7 +642,7 @@ function AdminPage() {
   }, [products, searchTerm])
 
   function mapProductToBulkRow(product) {
-    const rowId = product.id ?? product.cod ?? product._id
+    const rowId = getProductId(product)
 
     return {
       id: rowId,
@@ -674,7 +676,8 @@ function AdminPage() {
   }
 
   function hasBulkChanges(row) {
-    const original = products.find((p) => p.id === row.id)
+    const rowId = getProductId(row)
+    const original = products.find((p) => getProductId(p) === rowId)
     if (!original) return true
 
     const originalMapped = mapProductToBulkRow(original)
@@ -840,7 +843,8 @@ function AdminPage() {
     }
 
     const { parsedPrice, parsedCost } = validation
-    toggleBulkSaving(row.id, true)
+    const rowId = getProductId(row)
+    toggleBulkSaving(rowId, true)
 
     try {
       await submitBulkRow(row, parsedPrice, parsedCost)
@@ -849,7 +853,7 @@ function AdminPage() {
       console.error(err)
       setError(err.message)
     } finally {
-      toggleBulkSaving(row.id, false)
+      toggleBulkSaving(rowId, false)
     }
   }
 
@@ -874,8 +878,9 @@ function AdminPage() {
         }
 
         const { parsedPrice, parsedCost } = validation
-        toggleBulkSaving(row.id, true)
-        currentlySaving.add(row.id)
+        const rowId = getProductId(row)
+        toggleBulkSaving(rowId, true)
+        currentlySaving.add(rowId)
         await submitBulkRow(row, parsedPrice, parsedCost)
       }
 

@@ -4,18 +4,19 @@ const { getCollection } = require('./db')
 
 function buildProductQuery(id) {
   const or = []
-  const numericId = Number(id)
+  const trimmed = typeof id === 'string' ? id.trim() : id
+  const numericId = Number(trimmed)
 
   if (Number.isFinite(numericId)) {
     or.push({ id: numericId }, { cod: numericId })
   }
 
-  if (id !== undefined && id !== null) {
-    or.push({ id }, { cod: id })
+  if (trimmed !== undefined && trimmed !== null && trimmed !== '') {
+    or.push({ id: trimmed }, { cod: trimmed }, { codBarras: trimmed })
   }
 
-  if (ObjectId.isValid(id)) {
-    or.push({ _id: new ObjectId(id) })
+  if (ObjectId.isValid(trimmed)) {
+    or.push({ _id: new ObjectId(trimmed) })
   }
 
   return or.length ? { $or: or } : null
@@ -24,7 +25,22 @@ function buildProductQuery(id) {
 function serialize(doc) {
   if (!doc) return null
   const { _id, ...rest } = doc
-  return rest
+  const normalizedId =
+    rest.id !== undefined && rest.id !== null
+      ? rest.id
+      : rest.cod !== undefined && rest.cod !== null
+        ? rest.cod
+        : _id
+
+  return {
+    ...rest,
+    ...(normalizedId !== undefined && normalizedId !== null
+      ? { id: normalizedId }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(doc, '_id')
+      ? { _id: _id ? _id.toString() : '' }
+      : {}),
+  }
 }
 
 async function getNextCod(collection) {
@@ -59,8 +75,8 @@ async function addProduct(product) {
     createdAt: new Date().toISOString(),
   }
 
-  await collection.insertOne(newProduct)
-  return serialize(newProduct)
+  const result = await collection.insertOne(newProduct)
+  return serialize({ _id: result.insertedId, ...newProduct })
 }
 
 async function updateProduct(id, updates) {
