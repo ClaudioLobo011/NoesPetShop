@@ -15,6 +15,7 @@ function AdminPage() {
   // ---- IMPORTAÇÃO DE IMAGENS ----
   const [imageImportSummary, setImageImportSummary] = useState([])
   const [imageImporting, setImageImporting] = useState(false)
+  const IMAGE_UPLOAD_BATCH_LIMIT = 200
   const importExampleRows = useMemo(
     () => [
       {
@@ -881,65 +882,84 @@ function AdminPage() {
     clearMessages()
     setImageImporting(true)
 
+    const batches = []
+    for (let i = 0; i < validItems.length; i += IMAGE_UPLOAD_BATCH_LIMIT) {
+      batches.push(validItems.slice(i, i + IMAGE_UPLOAD_BATCH_LIMIT))
+    }
+
     let successCount = 0
     let failCount = 0
 
-    for (const item of validItems) {
-      setImageImportSummary((prev) =>
-        prev.map((entry) =>
-          entry.codBarras === item.codBarras
-            ? { ...entry, status: 'enviando', error: '' }
-            : entry,
-        ),
-      )
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex]
 
-      const result = await handleUploadImage(
-        item.product,
-        item.file,
-        (imageUrl) => {
+      for (const item of batch) {
+        setImageImportSummary((prev) =>
+          prev.map((entry) =>
+            entry.codBarras === item.codBarras
+              ? { ...entry, status: 'enviando', error: '' }
+              : entry,
+          ),
+        )
+
+        const result = await handleUploadImage(
+          item.product,
+          item.file,
+          (imageUrl) => {
+            setImageImportSummary((prev) =>
+              prev.map((entry) =>
+                entry.codBarras === item.codBarras
+                  ? { ...entry, uploadedUrl: imageUrl }
+                  : entry,
+              ),
+            )
+          },
+          { showMessage: false },
+        )
+
+        if (result?.success) {
+          successCount += 1
           setImageImportSummary((prev) =>
             prev.map((entry) =>
               entry.codBarras === item.codBarras
-                ? { ...entry, uploadedUrl: imageUrl }
+                ? { ...entry, status: 'concluido' }
                 : entry,
             ),
           )
-        },
-        { showMessage: false },
-      )
-
-      if (result?.success) {
-        successCount += 1
-        setImageImportSummary((prev) =>
-          prev.map((entry) =>
-            entry.codBarras === item.codBarras
-              ? { ...entry, status: 'concluido' }
-              : entry,
-          ),
-        )
-      } else {
-        failCount += 1
-        setImageImportSummary((prev) =>
-          prev.map((entry) =>
-            entry.codBarras === item.codBarras
-              ? {
-                  ...entry,
-                  status: 'erro',
-                  error: result?.error || 'Erro ao enviar imagem.',
-                }
-              : entry,
-          ),
-        )
+        } else {
+          failCount += 1
+          setImageImportSummary((prev) =>
+            prev.map((entry) =>
+              entry.codBarras === item.codBarras
+                ? {
+                    ...entry,
+                    status: 'erro',
+                    error: result?.error || 'Erro ao enviar imagem.',
+                  }
+                : entry,
+            ),
+          )
+        }
       }
     }
 
     setImageImporting(false)
 
     if (successCount > 0) {
+      const batchesCount = batches.length
+      const batchInfo =
+        batchesCount > 1
+          ? ` Processadas em ${batchesCount} lote${
+              batchesCount > 1 ? 's' : ''
+            } de até ${IMAGE_UPLOAD_BATCH_LIMIT} arquivo${
+              IMAGE_UPLOAD_BATCH_LIMIT > 1 ? 's' : ''
+            }.`
+          : ''
+
       setSuccess(
         `${successCount} imagem${successCount > 1 ? 's' : ''} importada${
           successCount > 1 ? 's' : ''
-        } com sucesso.`,
+        } com sucesso.${batchInfo}`,
       )
     }
 
