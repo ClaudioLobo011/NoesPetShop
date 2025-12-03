@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { useCart } from '../context/CartContext'
-import { API_URL } from '../config/apiConfig'
+import { IMAGE_BASE_URL } from '../config/apiConfig'
 import placeholderImage from '../assets/logo2.png'
 
 function describePromotionShort(promo) {
@@ -47,7 +47,7 @@ function ProductCard({ product }) {
 
   const imageUrl =
     product.codBarras && !imgError
-      ? `${API_URL}/product-image/${product.codBarras}`
+      ? `${IMAGE_BASE_URL}/${product.codBarras}`
       : null
 
   const displayImage = imageUrl || placeholderImage

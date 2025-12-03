@@ -2,9 +2,12 @@ const express = require('express')
 const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const dotenv = require('dotenv')
-const path = require('path')
-const fs = require('fs')
 const multer = require('multer')
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} = require('@aws-sdk/client-s3')
 
 const placeholderSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-label="Imagem de produto não disponível"><defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#f3f4f6"/><stop offset="100%" stop-color="#e5e7eb"/></linearGradient></defs><rect width="200" height="200" fill="url(#g)"/><circle cx="100" cy="80" r="34" fill="#d1d5db"/><rect x="40" y="126" width="120" height="36" rx="8" fill="#d1d5db"/><path d="M70 134c8-10 16-16 30-16s22 6 30 16" stroke="#9ca3af" stroke-width="6" stroke-linecap="round" fill="none"/></svg>`
 
@@ -12,7 +15,44 @@ dotenv.config()
 
 const { validateAdmin, signAdminToken, authMiddleware } = require('./auth')
 
+const {
+  R2_ACCESS_KEY_ID,
+  R2_SECRET_ACCESS_KEY,
+  R2_ACCOUNT_ID,
+  R2_BUCKET,
+  R2_PUBLIC_BASE_URL,
+  R2_REGION,
+} = process.env
 
+const r2Configured =
+  Boolean(R2_ACCESS_KEY_ID) &&
+  Boolean(R2_SECRET_ACCESS_KEY) &&
+  Boolean(R2_ACCOUNT_ID) &&
+  Boolean(R2_BUCKET) &&
+  Boolean(R2_REGION)
+
+const r2PublicBaseUrl = R2_PUBLIC_BASE_URL?.replace(/\/+$/, '') || ''
+
+const r2Client =
+  r2Configured
+    ? new S3Client({
+        region: R2_REGION,
+        endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+        credentials: {
+          accessKeyId: R2_ACCESS_KEY_ID,
+          secretAccessKey: R2_SECRET_ACCESS_KEY,
+        },
+      })
+    : null
+
+function getProductImageKey(codBarras) {
+  return `products/${codBarras}.png`
+}
+
+function sendPlaceholder(res) {
+  res.type('image/svg+xml')
+  return res.send(placeholderSvg)
+}
 
 const app = express()
 const PORT = process.env.PORT || 4000
@@ -39,22 +79,7 @@ const {
 } = require('./promotionsStore')
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const codBarras = req.body.codBarras
-      if (!codBarras) {
-        return cb(new Error('codBarras é obrigatório para upload de imagem.'))
-      }
-      const dir = path.join(__dirname, 'data', 'product_image', codBarras)
-      fs.mkdirSync(dir, { recursive: true })
-      cb(null, dir)
-    },
-    filename: (req, file, cb) => {
-      const codBarras = req.body.codBarras
-      // vamos sempre salvar como .png (e pedir PNG no painel)
-      cb(null, `${codBarras}.png`)
-    },
-  }),
+  storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
     if (file.mimetype !== 'image/png') {
       return cb(new Error('A imagem deve ser PNG.'))
@@ -237,27 +262,79 @@ app.post(
       return res.status(500).json({ message: 'Erro ao validar produto.' })
     }
 
-    const imageUrl = `/product-image/${codBarras}`
+    if (!r2Configured || !r2Client) {
+      console.error('Upload falhou: credenciais do Cloudflare R2 não configuradas.')
+      return res.status(500).json({
+        message: 'Armazenamento de imagens não configurado. Verifique as variáveis R2.',
+      })
+    }
 
-    return res.json({
-      message: 'Imagem enviada com sucesso.',
-      imageUrl,
-    })
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        message: 'Arquivo de imagem é obrigatório.',
+      })
+    }
+
+    const imageKey = getProductImageKey(codBarras)
+
+    try {
+      await r2Client.send(
+        new PutObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: imageKey,
+          Body: req.file.buffer,
+          ContentType: req.file.mimetype || 'image/png',
+        }),
+      )
+
+      const imageUrl = r2PublicBaseUrl
+        ? `${r2PublicBaseUrl}/${imageKey}`
+        : `${CLIENT_URL}/product-image/${codBarras}`
+
+      return res.json({
+        message: 'Imagem enviada com sucesso.',
+        imageUrl,
+      })
+    } catch (err) {
+      console.error('Erro ao salvar imagem no Cloudflare R2:', err)
+      return res
+        .status(500)
+        .json({ message: 'Erro ao salvar imagem no armazenamento.' })
+    }
   },
 )
 
 // SERVIR IMAGEM DO PRODUTO POR CODBARRAS
-app.get('/product-image/:codBarras', (req, res) => {
+app.get('/product-image/:codBarras', async (req, res) => {
   const { codBarras } = req.params
-  const dir = path.join(__dirname, 'data', 'product_image', codBarras)
-  const imgPath = path.join(dir, `${codBarras}.png`)
 
-  if (!fs.existsSync(imgPath)) {
-    res.type('image/svg+xml')
-    return res.send(placeholderSvg)
+  if (!r2Configured || !r2Client) {
+    return sendPlaceholder(res)
   }
 
-  return res.sendFile(imgPath)
+  const imageKey = getProductImageKey(codBarras)
+
+  try {
+    const response = await r2Client.send(
+      new GetObjectCommand({ Bucket: R2_BUCKET, Key: imageKey }),
+    )
+
+    if (!response || !response.Body) {
+      return sendPlaceholder(res)
+    }
+
+    res.setHeader('Content-Type', response.ContentType || 'image/png')
+    response.Body.pipe(res)
+    response.Body.on('error', (streamErr) => {
+      console.error('Erro ao transmitir imagem do R2:', streamErr)
+      if (!res.headersSent) {
+        sendPlaceholder(res)
+      }
+    })
+  } catch (err) {
+    console.error('Erro ao buscar imagem no Cloudflare R2:', err)
+    return sendPlaceholder(res)
+  }
 })
 
 // ================== CATEGORIAS (Categoria + Subcategoria) ==================
