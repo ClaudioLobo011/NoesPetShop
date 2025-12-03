@@ -94,11 +94,16 @@ function AdminPage() {
     setSuccess('')
   }
 
-  function getProductId(product) {
-    if (!product) return ''
-    const value = product.id ?? product.cod ?? product._id ?? ''
+  function normalizeId(value) {
     if (value === null || value === undefined) return ''
     return typeof value === 'string' ? value.trim() : String(value)
+  }
+
+  function getProductId(product) {
+    if (!product) return ''
+    const value =
+      product._id ?? product.id ?? product.cod ?? product.codBarras ?? ''
+    return normalizeId(value)
   }
 
   async function fetchProducts() {
@@ -642,10 +647,9 @@ function AdminPage() {
   }, [products, searchTerm])
 
   function mapProductToBulkRow(product) {
-    const rowId = getProductId(product)
-
     return {
-      id: rowId,
+      _id: normalizeId(product._id),
+      id: getProductId(product),
       cod: product.cod,
       name: product.name || '',
       description: product.description || '',
@@ -750,7 +754,7 @@ function AdminPage() {
   function handleBulkChange(id, field, value) {
     setBulkRows((prev) =>
       prev.map((row) =>
-        row.id === id
+        getProductId(row) === id
           ? {
               ...row,
               [field]: field === 'featured' ? value : value,
@@ -1880,16 +1884,17 @@ function AdminPage() {
                       ) : (
                         <div className="bulk-edit-body">
                           {filteredBulkRows.map((row) => {
-                            const saving = bulkSavingIds.has(row.id)
+                            const rowId = getProductId(row)
+                            const saving = bulkSavingIds.has(rowId)
                             return (
-                              <div key={row.id} className="bulk-edit-row">
+                              <div key={rowId} className="bulk-edit-row">
                                 <div className="bulk-edit-cell">
                                   <input
                                     type="text"
                                     value={row.name}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'name',
                                         e.target.value,
                                       )
@@ -1907,7 +1912,7 @@ function AdminPage() {
                                     value={row.description}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'description',
                                         e.target.value,
                                       )
@@ -1924,7 +1929,7 @@ function AdminPage() {
                                     value={row.costPrice}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'costPrice',
                                         e.target.value,
                                       )
@@ -1940,7 +1945,7 @@ function AdminPage() {
                                     value={row.price}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'price',
                                         e.target.value,
                                       )
@@ -1956,7 +1961,7 @@ function AdminPage() {
                                     value={row.category}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'category',
                                         e.target.value,
                                       )
@@ -1971,7 +1976,7 @@ function AdminPage() {
                                     value={row.subcategory}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'subcategory',
                                         e.target.value,
                                       )
@@ -1995,7 +2000,7 @@ function AdminPage() {
                                             handleUploadImage(row, file, () => {
                                               setBulkRows((prev) =>
                                                 prev.map((r) =>
-                                                  r.id === row.id
+                                                  getProductId(r) === rowId
                                                     ? { ...r, hasImage: true }
                                                     : r,
                                                 ),
@@ -2019,7 +2024,7 @@ function AdminPage() {
                                     checked={row.featured}
                                     onChange={(e) =>
                                       handleBulkChange(
-                                        row.id,
+                                        rowId,
                                         'featured',
                                         e.target.checked,
                                       )
