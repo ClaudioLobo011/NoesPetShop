@@ -1,55 +1,34 @@
-// server/categoriesStore.js
-const fs = require('fs').promises
-const path = require('path')
+const { getCollection } = require('./db')
 
-const DATA_DIR = path.join(__dirname, 'data')
-const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json')
+function serialize(doc) {
+  if (!doc) return null
+  const { _id, ...rest } = doc
+  return rest
+}
 
-async function ensureFile() {
-  try {
-    await fs.access(CATEGORIES_FILE)
-  } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true })
-    await fs.writeFile(CATEGORIES_FILE, '[]', 'utf8')
-  }
+async function getNextCod(collection) {
+  const [last] = await collection.find().sort({ cod: -1 }).limit(1).toArray()
+  return last ? Number(last.cod || last.id || 0) + 1 : 1
 }
 
 async function getCategories() {
-  await ensureFile()
-  const data = await fs.readFile(CATEGORIES_FILE, 'utf8')
-  try {
-    const parsed = JSON.parse(data)
-    // garante parentId nulo se não existir (dados antigos)
-    return Array.isArray(parsed)
-      ? parsed.map((c) => ({
-          ...c,
-          parentId:
-            c.parentId === undefined || c.parentId === null
-              ? null
-              : Number(c.parentId),
-        }))
-      : []
-  } catch {
-    return []
-  }
-}
+  const collection = await getCollection('categories')
+  const categories = await collection.find().sort({ cod: 1 }).toArray()
 
-async function saveCategories(categories) {
-  await fs.mkdir(DATA_DIR, { recursive: true })
-  await fs.writeFile(
-    CATEGORIES_FILE,
-    JSON.stringify(categories, null, 2),
-    'utf8',
+  return categories.map((c) =>
+    serialize({
+      ...c,
+      parentId:
+        c.parentId === undefined || c.parentId === null
+          ? null
+          : Number(c.parentId),
+    }),
   )
 }
 
 async function addCategory(category) {
-  const categories = await getCategories()
-
-  const nextCod =
-    categories.length > 0
-      ? Math.max(...categories.map((c) => Number(c.cod || c.id) || 0)) + 1
-      : 1
+  const collection = await getCollection('categories')
+  const nextCod = await getNextCod(collection)
 
   const parentId =
     category.parentId !== undefined &&
@@ -63,28 +42,19 @@ async function addCategory(category) {
     cod: nextCod,
     name: category.name,
     description: category.description || '',
-    parentId, // null = categoria principal, número = subcategoria
+    parentId,
     createdAt: new Date().toISOString(),
   }
 
-  categories.push(newCategory)
-  await saveCategories(categories)
-  return newCategory
+  await collection.insertOne(newCategory)
+  return serialize(newCategory)
 }
 
 async function updateCategory(id, updates) {
-  const categories = await getCategories()
+  const collection = await getCollection('categories')
   const numericId = Number(id)
 
-  const index = categories.findIndex(
-    (c) => Number(c.id) === numericId || Number(c.cod) === numericId,
-  )
-
-  if (index === -1) return null
-
-  const current = categories[index]
-
-  let parentId = current.parentId
+  let parentId
   if (Object.prototype.hasOwnProperty.call(updates, 'parentId')) {
     parentId =
       updates.parentId !== undefined &&
@@ -94,35 +64,33 @@ async function updateCategory(id, updates) {
         : null
   }
 
-  const updated = {
-    ...current,
-    name: updates.name ?? current.name,
-    description: updates.description ?? current.description,
-    parentId,
+  const updateData = {
+    ...(updates.name !== undefined ? { name: updates.name } : {}),
+    ...(updates.description !== undefined
+      ? { description: updates.description }
+      : {}),
+    ...(parentId !== undefined ? { parentId } : {}),
     updatedAt: new Date().toISOString(),
   }
 
-  categories[index] = updated
-  await saveCategories(categories)
-  return updated
+  const result = await collection.findOneAndUpdate(
+    { $or: [{ id: numericId }, { cod: numericId }] },
+    { $set: updateData },
+    { returnDocument: 'after' },
+  )
+
+  return serialize(result.value)
 }
 
 async function deleteCategory(id) {
-  const categories = await getCategories()
+  const collection = await getCollection('categories')
   const numericId = Number(id)
 
-  // remove a categoria e todas as subcategorias com parentId = id
-  const remaining = categories.filter(
-    (c) =>
-      Number(c.id) !== numericId &&
-      Number(c.cod) !== numericId &&
-      Number(c.parentId || 0) !== numericId,
-  )
+  const deleteResult = await collection.deleteMany({
+    $or: [{ id: numericId }, { cod: numericId }, { parentId: numericId }],
+  })
 
-  if (remaining.length === categories.length) return false
-
-  await saveCategories(remaining)
-  return true
+  return deleteResult.deletedCount > 0
 }
 
 module.exports = {

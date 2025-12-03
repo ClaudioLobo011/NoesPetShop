@@ -267,6 +267,7 @@ const {
   updatePromotion,
   deletePromotion,
 } = require('./promotionsStore')
+const { connectToDatabase } = require('./db')
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -305,6 +306,15 @@ app.use(cors({
 }))
 app.use(express.json())
 app.use(cookieParser())
+
+connectToDatabase()
+  .then(() => {
+    console.log('Conectado ao MongoDB.')
+  })
+  .catch((err) => {
+    console.error('Falha ao conectar ao MongoDB:', err)
+    process.exit(1)
+  })
 
 // LOGIN ADMIN
 app.post('/api/admin/login', async (req, res) => {
