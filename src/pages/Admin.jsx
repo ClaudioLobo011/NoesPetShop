@@ -705,6 +705,25 @@ function AdminPage() {
     formData.append('image', file)
 
     try {
+      const readResponse = async (res) => {
+        try {
+          const contentType = res.headers.get('content-type') || ''
+          const text = await res.text()
+
+          if (contentType.includes('application/json')) {
+            return JSON.parse(text)
+          }
+
+          try {
+            return JSON.parse(text)
+          } catch (err) {
+            return { message: text || 'Resposta inválida do servidor.' }
+          }
+        } catch (err) {
+          return { message: 'Não foi possível ler a resposta do servidor.' }
+        }
+      }
+
       const res = await fetch(
         `${API_URL}/api/products/${targetId}/image`,
         {
@@ -713,9 +732,20 @@ function AdminPage() {
           body: formData,
         },
       )
-      const data = await res.json()
+      const data = await readResponse(res)
+
       if (!res.ok) {
-        throw new Error(data.message || 'Erro ao enviar imagem.')
+        const fallbackMessage = res.status === 404
+          ? 'Produto não encontrado no servidor.'
+          : res.status === 500
+            ? 'Erro interno ao processar a imagem. Tente novamente.'
+            : 'Erro ao enviar imagem.'
+
+        const message =
+          (data && typeof data.message === 'string' && data.message.trim()) ||
+          fallbackMessage
+
+        return { success: false, error: message }
       }
 
       setProducts((prev) =>
