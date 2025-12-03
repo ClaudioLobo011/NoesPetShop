@@ -3,6 +3,10 @@ const cors = require('cors')
 const cookieParser = require('cookie-parser')
 const dotenv = require('dotenv')
 const multer = require('multer')
+const fs = require('fs').promises
+const path = require('path')
+const os = require('os')
+const { spawnSync } = require('child_process')
 const {
   S3Client,
   PutObjectCommand,
@@ -54,6 +58,192 @@ function sendPlaceholder(res) {
   return res.send(placeholderSvg)
 }
 
+function normalizeNumber(value) {
+  if (value === undefined || value === null) return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+
+  const parsed = Number(String(value).replace(/\s+/g, '').replace(',', '.'))
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function normalizeText(value) {
+  return String(value ?? '').trim()
+}
+
+function pickField(row, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(row, key)) {
+      return row[key]
+    }
+  }
+  return ''
+}
+
+async function parseXlsxWithPython(buffer) {
+  const tmpPath = path.join(
+    os.tmpdir(),
+    `import-${Date.now()}-${Math.random().toString(16).slice(2)}.xlsx`,
+  )
+
+  await fs.writeFile(tmpPath, buffer)
+
+  const pythonCode = `
+import sys, json, zipfile, re
+from xml.etree import ElementTree as ET
+
+path = sys.argv[1]
+
+try:
+    zf = zipfile.ZipFile(path)
+except Exception as exc:
+    sys.stderr.write(str(exc))
+    sys.exit(1)
+
+NS = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+shared = []
+
+if "xl/sharedStrings.xml" in zf.namelist():
+    root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+    for si in root.findall(f".//{NS}si"):
+        texts = [(t.text or "") for t in si.findall(f".//{NS}t")]
+        shared.append("".join(texts))
+
+sheet_name = None
+for name in zf.namelist():
+    if name.startswith("xl/worksheets/sheet"):
+        sheet_name = name
+        break
+
+if not sheet_name:
+    print("[]")
+    sys.exit(0)
+
+sheet_root = ET.fromstring(zf.read(sheet_name))
+rows_output = []
+
+for row in sheet_root.findall(f".//{NS}row"):
+    row_data = {}
+    for c in row.findall(f"{NS}c"):
+        ref = c.attrib.get("r", "")
+        col_match = re.match(r"([A-Z]+)", ref)
+        col = col_match.group(1) if col_match else ""
+        cell_type = c.attrib.get("t")
+        value = ""
+
+        if cell_type == "inlineStr":
+            t_elem = c.find(f"{NS}is/{NS}t")
+            if t_elem is not None and t_elem.text is not None:
+                value = t_elem.text
+
+        v_elem = c.find(f"{NS}v")
+        if value == "" and v_elem is not None and v_elem.text is not None:
+            if cell_type == "s":
+                try:
+                    idx = int(v_elem.text)
+                    value = shared[idx] if idx < len(shared) else ""
+                except Exception:
+                    value = ""
+            else:
+                value = v_elem.text
+
+        if value == "" and cell_type is None:
+            f_elem = c.find(f"{NS}f")
+            if f_elem is not None and f_elem.text:
+                value = f_elem.text
+
+        if col:
+            row_data[col] = value
+
+    if row_data:
+        rows_output.append(row_data)
+
+print(json.dumps(rows_output))
+`
+
+  const result = spawnSync('python3', ['-c', pythonCode, tmpPath], {
+    encoding: 'utf8',
+  })
+
+  await fs.unlink(tmpPath).catch(() => {})
+
+  if (result.status !== 0) {
+    const stderr = result.stderr?.trim()
+    throw new Error(stderr || 'Falha ao ler a planilha Excel.')
+  }
+
+  try {
+    return JSON.parse(result.stdout || '[]')
+  } catch (err) {
+    throw new Error('Não foi possível converter a planilha para JSON.')
+  }
+}
+
+function parseCsvContent(buffer) {
+  const content = buffer.toString('utf8')
+  const lines = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+
+  if (lines.length === 0) return []
+
+  const delimiter = lines[0].includes(';') ? ';' : ','
+
+  return lines.map((line) => {
+    const values = line
+      .split(delimiter)
+      .map((part) => part.replace(/^"|"$/g, '').trim())
+
+    const row = {}
+    values.forEach((value, idx) => {
+      row[String.fromCharCode(65 + idx)] = value
+    })
+    return row
+  })
+}
+
+async function parseImportFile(file) {
+  if (!file || !file.buffer) return []
+
+  const mimetype = file.mimetype || ''
+  if (mimetype.includes('csv') || mimetype.includes('text/plain')) {
+    return parseCsvContent(file.buffer)
+  }
+
+  return parseXlsxWithPython(file.buffer)
+}
+
+function convertRowsToObjects(rawRows) {
+  if (!Array.isArray(rawRows) || rawRows.length === 0) {
+    throw new Error('A planilha não possui dados para importar.')
+  }
+
+  const headerRow = rawRows[0]
+  const headerMap = {}
+
+  Object.entries(headerRow).forEach(([col, value]) => {
+    const header = normalizeText(value)
+    if (header) headerMap[col] = header
+  })
+
+  if (Object.keys(headerMap).length === 0) {
+    throw new Error('Não foi possível identificar o cabeçalho da planilha.')
+  }
+
+  const dataRows = rawRows.slice(1)
+
+  return dataRows
+    .map((row) => {
+      const obj = {}
+      Object.entries(row).forEach(([col, value]) => {
+        const header = headerMap[col]
+        if (header) obj[header] = value
+      })
+      return obj
+    })
+    .filter((row) => Object.keys(row).length > 0)
+}
+
 const app = express()
 const PORT = process.env.PORT || 4000
 const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:5173')
@@ -87,6 +277,26 @@ const upload = multer({
     cb(null, true)
   },
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+})
+
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'text/csv',
+    ]
+
+    if (!allowed.includes(file.mimetype)) {
+      return cb(
+        new Error('Envie uma planilha Excel (.xlsx/.xls) ou arquivo CSV.'),
+      )
+    }
+
+    cb(null, true)
+  },
+  limits: { fileSize: 10 * 1024 * 1024 },
 })
 
 app.use(cors({
@@ -223,6 +433,168 @@ app.delete('/api/products/:id', authMiddleware, async (req, res) => {
     return res.status(500).json({ message: 'Erro ao excluir produto.' })
   }
 })
+
+app.post(
+  '/api/products/import',
+  authMiddleware,
+  excelUpload.single('file'),
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ message: 'Envie o arquivo da planilha.' })
+    }
+
+    try {
+      const rawRows = await parseImportFile(req.file)
+      const parsedRows = convertRowsToObjects(rawRows)
+
+      if (!parsedRows.length) {
+        return res
+          .status(400)
+          .json({ message: 'Nenhuma linha de dados foi encontrada.' })
+      }
+
+      const products = await getProducts()
+      const categories = await getCategories()
+
+      const createdCategories = new Set()
+      const createdProducts = []
+      const updatedProducts = []
+      const errors = []
+
+      for (let i = 0; i < parsedRows.length; i += 1) {
+        const row = parsedRows[i]
+        const rowNumber = i + 2 // +1 cabeçalho, +1 índice zero
+
+        const name = normalizeText(
+          pickField(row, [
+            'Descrição',
+            'Descricao',
+            'DESCRIÇÃO',
+            'Produto',
+            'Nome',
+          ]),
+        )
+
+        const salePrice = normalizeNumber(
+          pickField(row, [
+            'Preço de Venda',
+            'Preco de Venda',
+            'PREÇO DE VENDA',
+            'Preco Venda',
+            'Preço',
+            'Valor',
+          ]),
+        )
+
+        const costPrice = normalizeNumber(
+          pickField(row, ['Preço de Custo', 'Preco de Custo', 'PREÇO DE CUSTO']),
+        )
+
+        const codBarras = normalizeText(
+          pickField(row, [
+            'CodBarras',
+            'CODBARRAS',
+            'Código de Barras',
+            'Cod Barras',
+            'codigo de barras',
+          ]),
+        )
+
+        const categoryName = normalizeText(
+          pickField(row, ['Categoria', 'CATEGORIA']),
+        )
+
+        if (!name || salePrice === null) {
+          errors.push({
+            row: rowNumber,
+            mensagem: 'Descrição e Preço de Venda são obrigatórios.',
+          })
+          continue
+        }
+
+        let resolvedCategory = categoryName
+
+        if (categoryName) {
+          const existingCategory = categories.find(
+            (c) => (c.name || '').toLowerCase() === categoryName.toLowerCase(),
+          )
+
+          if (existingCategory) {
+            resolvedCategory = existingCategory.name
+          } else {
+            const newCategory = await addCategory({
+              name: categoryName,
+              description: '',
+              parentId: null,
+            })
+            categories.push(newCategory)
+            createdCategories.add(newCategory.name)
+            resolvedCategory = newCategory.name
+          }
+        }
+
+        const existingProduct = products.find((p) => {
+          if (codBarras) {
+            return String(p.codBarras || '').trim() === codBarras
+          }
+          return (p.name || '').toLowerCase() === name.toLowerCase()
+        })
+
+        const descriptionDetailed = normalizeText(
+          pickField(row, ['Descrição Detalhada', 'Descricao Detalhada']),
+        )
+
+        const payload = {
+          name,
+          description: descriptionDetailed || name,
+          price: salePrice,
+          category: resolvedCategory,
+          subcategory: '',
+          featured: true,
+          codBarras,
+          costPrice,
+        }
+
+        try {
+          if (existingProduct) {
+            const updated = await updateProduct(existingProduct.id, payload)
+            if (!updated) {
+              errors.push({
+                row: rowNumber,
+                mensagem: 'Não foi possível atualizar o produto existente.',
+              })
+            } else {
+              updatedProducts.push(updated)
+            }
+          } else {
+            const created = await addProduct(payload)
+            createdProducts.push(created)
+            products.push(created)
+          }
+        } catch (err) {
+          errors.push({
+            row: rowNumber,
+            mensagem: err.message || 'Falha ao salvar o produto.',
+          })
+        }
+      }
+
+      return res.json({
+        message: 'Importação concluída.',
+        totalLinhas: parsedRows.length,
+        produtosCriados: createdProducts.length,
+        produtosAtualizados: updatedProducts.length,
+        categoriasCriadas: Array.from(createdCategories),
+        erros: errors,
+      })
+    } catch (err) {
+      console.error('Erro ao importar planilha:', err)
+      return res
+        .status(400)
+        .json({ message: err.message || 'Não foi possível importar a planilha.' })
+    }
+  },
+)
 
 // UPLOAD DE IMAGEM DO PRODUTO (somente admin)
 app.post(
