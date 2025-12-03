@@ -810,6 +810,11 @@ app.post(
         ? `${r2PublicBaseUrl}/${imageKey}`
         : `${CLIENT_URL}/product-image/${codBarras}`
 
+      const updated = await updateProduct(id, { imageUrl })
+      if (!updated) {
+        return res.status(404).json({ message: 'Produto não encontrado.' })
+      }
+
       return res.json({
         message: 'Imagem enviada com sucesso.',
         imageUrl,

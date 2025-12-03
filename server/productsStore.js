@@ -74,6 +74,7 @@ async function addProduct(product) {
     category: product.category || '',
     subcategory: product.subcategory || '',
     featured: product.featured !== false,
+    imageUrl: product.imageUrl || '',
     createdAt: new Date().toISOString(),
   }
 
@@ -100,6 +101,7 @@ async function updateProduct(id, updates) {
       ? { subcategory: updates.subcategory }
       : {}),
     ...(updates.codBarras !== undefined ? { codBarras: updates.codBarras } : {}),
+    ...(updates.imageUrl !== undefined ? { imageUrl: updates.imageUrl } : {}),
     ...(Object.prototype.hasOwnProperty.call(updates, 'costPrice')
       ? {
           costPrice:

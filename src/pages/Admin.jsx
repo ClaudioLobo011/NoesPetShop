@@ -680,6 +680,20 @@ function AdminPage() {
         throw new Error(data.message || 'Erro ao enviar imagem.')
       }
       setSuccess('Imagem enviada com sucesso.')
+      setProducts((prev) =>
+        prev.map((p) =>
+          getProductId(p) === getProductId(product)
+            ? { ...p, imageUrl: data.imageUrl }
+            : p,
+        ),
+      )
+      setBulkRows((prev) =>
+        prev.map((row) =>
+          getProductId(row) === getProductId(product)
+            ? { ...row, hasImage: true }
+            : row,
+        ),
+      )
       if (typeof onUploaded === 'function') {
         onUploaded(data.imageUrl)
       }
