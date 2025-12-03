@@ -1416,14 +1416,23 @@ function AdminPage() {
                   <ul className="admin-products-list">
                     {filteredProducts.map((p) => (
                       <li key={p.id} className="admin-product-item">
-                        <div>
-                          <strong>{p.name}</strong>
-                          <p>
-                            {p.price?.toLocaleString?.('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL',
-                            }) || `R$ ${p.price}`}
-                          </p>
+                        <div className="admin-product-info">
+                          <div className="admin-product-thumb" aria-label="Pré-visualização da imagem do produto">
+                            {p.imageUrl ? (
+                              <img src={p.imageUrl} alt={p.name || 'Imagem do produto'} loading="lazy" />
+                            ) : (
+                              <span>Sem imagem</span>
+                            )}
+                          </div>
+
+                          <div>
+                            <strong>{p.name}</strong>
+                            <p>
+                              {p.price?.toLocaleString?.('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              }) || `R$ ${p.price}`}
+                            </p>
 
                             <div
                               style={{
@@ -1436,12 +1445,13 @@ function AdminPage() {
                               {p.codBarras && <span> • CodBarras: {p.codBarras}</span>}
                             </div>
 
-                          {p.category && (
-                            <small>
-                              {p.category}
-                              {p.subcategory ? ` • ${p.subcategory}` : ''}
-                            </small>
-                          )}
+                            {p.category && (
+                              <small>
+                                {p.category}
+                                {p.subcategory ? ` • ${p.subcategory}` : ''}
+                              </small>
+                            )}
+                          </div>
                         </div>
 
                         <div className="admin-item-actions">
