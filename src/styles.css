@@ -37,6 +37,13 @@ body {
   padding: 1.5rem 1rem 3rem;
 }
 
+.main-content.admin-content-full {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 1.5rem 1.5rem 3rem;
+}
+
 /* Header */
 
 .header {
