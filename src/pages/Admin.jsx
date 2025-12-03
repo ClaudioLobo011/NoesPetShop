@@ -32,6 +32,8 @@ function AdminPage() {
   // ---- ALTERAÇÃO EM MASSA ----
   const [bulkRows, setBulkRows] = useState([])
   const [bulkSavingIds, setBulkSavingIds] = useState(() => new Set())
+  const [bulkNameFilter, setBulkNameFilter] = useState('')
+  const [bulkSortOrder, setBulkSortOrder] = useState('asc')
 
   // ---- CATEGORIAS ----
   const [categories, setCategories] = useState([])
@@ -654,6 +656,26 @@ function AdminPage() {
   useEffect(() => {
     setBulkRows(products.map(mapProductToBulkRow))
   }, [products])
+
+  const filteredBulkRows = useMemo(() => {
+    const term = bulkNameFilter.trim().toLowerCase()
+    const rows = term
+      ? bulkRows.filter((row) => (row.name || '').toLowerCase().includes(term))
+      : bulkRows
+
+    const sorted = [...rows].sort((a, b) => {
+      const nameA = (a.name || '').toLowerCase()
+      const nameB = (b.name || '').toLowerCase()
+
+      if (nameA === nameB) return 0
+      if (bulkSortOrder === 'desc') {
+        return nameA < nameB ? 1 : -1
+      }
+      return nameA > nameB ? 1 : -1
+    })
+
+    return sorted
+  }, [bulkRows, bulkNameFilter, bulkSortOrder])
 
   function handleBulkChange(id, field, value) {
     setBulkRows((prev) =>
@@ -1453,6 +1475,46 @@ function AdminPage() {
                 </div>
 
                 <div className="admin-list bulk-edit-card">
+                  <div className="bulk-filters">
+                    <label className="bulk-filter-input">
+                      <span>Nome</span>
+                      <input
+                        type="text"
+                        placeholder="Filtrar por nome"
+                        value={bulkNameFilter}
+                        onChange={(e) => setBulkNameFilter(e.target.value)}
+                      />
+                    </label>
+
+                    <div className="bulk-sort-group">
+                      <span>Ordenação</span>
+                      <div className="bulk-sort-actions">
+                        <button
+                          type="button"
+                          className={
+                            bulkSortOrder === 'asc'
+                              ? 'secondary-button small active'
+                              : 'secondary-button small'
+                          }
+                          onClick={() => setBulkSortOrder('asc')}
+                        >
+                          Crescente
+                        </button>
+                        <button
+                          type="button"
+                          className={
+                            bulkSortOrder === 'desc'
+                              ? 'secondary-button small active'
+                              : 'secondary-button small'
+                          }
+                          onClick={() => setBulkSortOrder('desc')}
+                        >
+                          Decrescente
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="bulk-edit-scroll">
                     <div className="bulk-edit-table">
                       <div className="bulk-edit-row bulk-edit-header">
@@ -1469,13 +1531,13 @@ function AdminPage() {
 
                       {loadingProducts ? (
                         <p className="admin-helper-text">Carregando produtos...</p>
-                      ) : bulkRows.length === 0 ? (
+                      ) : filteredBulkRows.length === 0 ? (
                         <p className="admin-helper-text">
-                          Nenhum produto cadastrado.
+                          Nenhum produto encontrado com os filtros.
                         </p>
                       ) : (
                         <div className="bulk-edit-body">
-                          {bulkRows.map((row) => {
+                          {filteredBulkRows.map((row) => {
                             const saving = bulkSavingIds.has(row.id)
                             return (
                               <div key={row.id} className="bulk-edit-row">

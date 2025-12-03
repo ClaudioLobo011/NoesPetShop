@@ -1065,6 +1065,57 @@ body {
   padding: 1rem;
 }
 
+.bulk-filters {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.bulk-filter-input {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 240px;
+}
+
+.bulk-filter-input span {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.bulk-filter-input input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #020514;
+  color: var(--color-light);
+}
+
+.bulk-sort-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  align-items: flex-start;
+}
+
+.bulk-sort-group span {
+  font-size: 0.85rem;
+  color: var(--color-muted);
+}
+
+.bulk-sort-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.secondary-button.small.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
 .bulk-edit-scroll {
   width: 100%;
   overflow-x: auto;
