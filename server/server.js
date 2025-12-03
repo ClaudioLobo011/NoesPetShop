@@ -386,7 +386,10 @@ app.get('/api/admin/me', authMiddleware, (req, res) => {
 // LISTAR PRODUTOS (público)
 app.get('/api/products', async (req, res) => {
   try {
-    const products = await getProducts()
+    const { featured } = req.query
+    const featuredOnly = typeof featured === 'string' && ['true', '1'].includes(featured)
+
+    const products = await getProducts({ featuredOnly })
     return res.json(products)
   } catch (err) {
     console.error('Erro ao listar produtos:', err)

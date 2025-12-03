@@ -10,14 +10,12 @@ function ProductGrid() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await fetch(`${API_URL}/api/products`)
+        const res = await fetch(`${API_URL}/api/products?featured=true`)
         if (!res.ok) throw new Error('Erro ao buscar produtos')
         let data = await res.json()
         if (!Array.isArray(data)) data = []
 
-        // se tiver campo "featured", mostra só destacados; senão mostra tudo
-        const featured = data.filter((p) => p.featured !== false)
-        setProducts(featured.length ? featured : data)
+        setProducts(data)
       } catch (err) {
         console.error(err)
         setError('Não foi possível carregar os produtos.')

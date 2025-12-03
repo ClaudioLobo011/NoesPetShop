@@ -48,9 +48,11 @@ async function getNextCod(collection) {
   return last ? Number(last.cod || last.id || 0) + 1 : 1
 }
 
-async function getProducts() {
+async function getProducts(options = {}) {
+  const { featuredOnly = false } = options
   const collection = await getCollection('products')
-  const products = await collection.find().sort({ cod: 1 }).toArray()
+  const query = featuredOnly ? { featured: true } : {}
+  const products = await collection.find(query).sort({ cod: 1 }).toArray()
   return products.map(serialize)
 }
 
