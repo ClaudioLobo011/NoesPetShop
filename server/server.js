@@ -285,6 +285,7 @@ const CLIENT_URL = (process.env.CLIENT_URL || 'http://localhost:5173')
   .trim()
   .replace(/\/+$/, '')
 const {
+  getProduct,
   getProducts,
   addProduct,
   updateProduct,
@@ -753,11 +754,7 @@ app.post(
 
     // opcional: validar se o produto existe
     try {
-      const products = await getProducts()
-      const numericId = Number(id)
-      const product = products.find(
-        (p) => Number(p.id) === numericId || Number(p.cod) === numericId,
-      )
+      const product = await getProduct(id)
 
       if (!product) {
         return res.status(404).json({ message: 'Produto não encontrado.' })

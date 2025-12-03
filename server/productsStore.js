@@ -56,6 +56,16 @@ async function getProducts(options = {}) {
   return products.map(serialize)
 }
 
+async function getProduct(id) {
+  const collection = await getCollection('products')
+  const query = buildProductQuery(id)
+
+  if (!query) return null
+
+  const product = await collection.findOne(query)
+  return serialize(product)
+}
+
 async function addProduct(product) {
   const collection = await getCollection('products')
   const nextCod = await getNextCod(collection)
@@ -132,6 +142,7 @@ async function deleteProduct(id) {
 }
 
 module.exports = {
+  getProduct,
   getProducts,
   addProduct,
   updateProduct,

@@ -155,6 +155,18 @@ function AdminPage() {
       .filter((value, index, arr) => value && arr.indexOf(value) === index)
   }
 
+  function ensureOriginalIdentifiers(product, base = product) {
+    const persisted = Array.isArray(base?.originalIdentifiers)
+      ? base.originalIdentifiers
+      : []
+    const dynamic = buildIdentifiers(base, ['id', 'cod', '_id', 'codBarras'])
+    const combined = [...persisted, ...dynamic]
+      .map((value) => normalizeId(value))
+      .filter((value, index, arr) => value && arr.indexOf(value) === index)
+
+    return { ...product, originalIdentifiers: combined }
+  }
+
   function getProductLabel(product) {
     if (!product) return 'Produto'
     const name = product.name?.trim()
@@ -171,7 +183,8 @@ function AdminPage() {
       const res = await fetch(`${API_URL}/api/products`)
       if (!res.ok) throw new Error('Erro ao buscar produtos')
       const data = await res.json()
-      setProducts(Array.isArray(data) ? data : [])
+      const list = Array.isArray(data) ? data : []
+      setProducts(list.map((product) => ensureOriginalIdentifiers(product)))
     } catch (err) {
       console.error(err)
       setError('Erro ao carregar produtos.')
@@ -575,7 +588,10 @@ function AdminPage() {
           throw new Error(data.message || 'Erro ao salvar produto.')
         }
 
-        setProducts((prev) => [...prev, data])
+        setProducts((prev) => [
+          ...prev,
+          ensureOriginalIdentifiers(data, productForm),
+        ])
         resetProductForm()
         setSuccess('Produto criado com sucesso.')
       } else {
@@ -599,7 +615,11 @@ function AdminPage() {
 
         const updatedId = getProductId(data)
         setProducts((prev) =>
-          prev.map((p) => (getProductId(p) === updatedId ? data : p)),
+          prev.map((p) =>
+            getProductId(p) === updatedId
+              ? ensureOriginalIdentifiers(data, p)
+              : p,
+          ),
         )
         resetProductForm()
         setSuccess('Produto atualizado com sucesso.')
@@ -661,6 +681,14 @@ function AdminPage() {
       return
     }
 
+    const identifiers = getProductIdentifiers(product)
+    const targetId = identifiers[0] || getProductId(product)
+
+    if (!targetId) {
+      setError('Não foi possível identificar o produto para enviar a imagem.')
+      return
+    }
+
     const formData = new FormData()
     formData.append('codBarras', product.codBarras)
     formData.append('image', file)
@@ -668,7 +696,7 @@ function AdminPage() {
     try {
       clearMessages()
       const res = await fetch(
-        `${API_URL}/api/products/${getProductId(product)}/image`,
+        `${API_URL}/api/products/${targetId}/image`,
         {
           method: 'POST',
           credentials: 'include',
@@ -682,14 +710,14 @@ function AdminPage() {
       setSuccess('Imagem enviada com sucesso.')
       setProducts((prev) =>
         prev.map((p) =>
-          getProductId(p) === getProductId(product)
-            ? { ...p, imageUrl: data.imageUrl }
+          getProductId(p) === targetId
+            ? ensureOriginalIdentifiers({ ...p, imageUrl: data.imageUrl }, p)
             : p,
         ),
       )
       setBulkRows((prev) =>
         prev.map((row) =>
-          getProductId(row) === getProductId(product)
+          getProductId(row) === targetId
             ? { ...row, hasImage: true }
             : row,
         ),
@@ -719,31 +747,27 @@ function AdminPage() {
   }, [products, searchTerm])
 
   function mapProductToBulkRow(product) {
+    const normalized = ensureOriginalIdentifiers(product)
     return {
-      _id: normalizeId(product._id),
-      id: getProductId(product),
-      cod: product.cod,
-      originalIdentifiers: buildIdentifiers(product, [
-        'id',
-        'cod',
-        '_id',
-        'codBarras',
-      ]),
-      name: product.name || '',
-      description: product.description || '',
+      _id: normalizeId(normalized._id),
+      id: getProductId(normalized),
+      cod: normalized.cod,
+      originalIdentifiers: normalized.originalIdentifiers,
+      name: normalized.name || '',
+      description: normalized.description || '',
       costPrice:
-        product.costPrice !== undefined && product.costPrice !== null
-          ? String(product.costPrice).replace(',', '.')
+        normalized.costPrice !== undefined && normalized.costPrice !== null
+          ? String(normalized.costPrice).replace(',', '.')
           : '',
       price:
-        typeof product.price === 'number'
-          ? product.price.toString().replace(',', '.')
-          : product.price || '',
-      category: product.category || '',
-      subcategory: product.subcategory || '',
-      featured: product.featured !== false,
-      codBarras: product.codBarras || '',
-      hasImage: Boolean(product.imageUrl),
+        typeof normalized.price === 'number'
+          ? normalized.price.toString().replace(',', '.')
+          : normalized.price || '',
+      category: normalized.category || '',
+      subcategory: normalized.subcategory || '',
+      featured: normalized.featured !== false,
+      codBarras: normalized.codBarras || '',
+      hasImage: Boolean(normalized.imageUrl),
     }
   }
 
@@ -908,12 +932,13 @@ function AdminPage() {
       }
 
       const updatedId = getProductId(data)
+      const normalized = ensureOriginalIdentifiers(data, row)
       setProducts((prev) =>
-        prev.map((p) => (getProductId(p) === updatedId ? data : p)),
+        prev.map((p) => (getProductId(p) === updatedId ? normalized : p)),
       )
       setBulkRows((prev) =>
         prev.map((r) =>
-          getProductId(r) === updatedId ? mapProductToBulkRow(data) : r,
+          getProductId(r) === updatedId ? mapProductToBulkRow(normalized) : r,
         ),
       )
     }
