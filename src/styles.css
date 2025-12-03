@@ -969,6 +969,65 @@ body {
   gap: 0.15rem;
 }
 
+.import-file-row {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 1.4fr);
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.import-example {
+  width: 100%;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+  display: grid;
+  gap: 0.5rem;
+}
+
+.import-example-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  color: var(--color-light);
+  font-size: 0.9rem;
+}
+
+.import-example-header span {
+  font-size: 0.8rem;
+  color: var(--color-muted);
+}
+
+.import-example-table-wrapper {
+  overflow: auto;
+}
+
+.import-example-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  color: var(--color-light);
+}
+
+.import-example-table th,
+.import-example-table td {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+}
+
+.import-example-table th {
+  background: rgba(255, 255, 255, 0.04);
+  font-weight: 600;
+}
+
+.import-example-table td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .import-summary {
   margin-top: 0.6rem;
   padding: 0.8rem;
@@ -1000,6 +1059,10 @@ body {
 @media (max-width: 880px) {
   .admin-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .import-file-row {
+    grid-template-columns: 1fr;
   }
 }
 

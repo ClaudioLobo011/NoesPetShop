@@ -11,6 +11,29 @@ function AdminPage() {
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const importExampleRows = useMemo(
+    () => [
+      {
+        CodBarras: '7891234567890',
+        Descrição: 'Ração Premium 3kg',
+        'Preço de Custo': '45,90',
+        'Preço de Venda': '79,90',
+        Categoria: 'Rações',
+        SubCategoria: 'Cães Adultos',
+        Destaque: 'Sim',
+      },
+      {
+        CodBarras: '7899876543210',
+        Descrição: 'Brinquedo Corda',
+        'Preço de Custo': '9,50',
+        'Preço de Venda': '19,90',
+        Categoria: 'Brinquedos',
+        SubCategoria: '',
+        Destaque: 'Não',
+      },
+    ],
+    [],
+  )
 
   // ---- PRODUTOS ----
   const [products, setProducts] = useState([])
@@ -1385,8 +1408,9 @@ function AdminPage() {
 
                   <p className="admin-helper-text">
                     Envie uma planilha Excel (.xlsx/.xls) ou CSV com as colunas
-                    abaixo. O código é gerado automaticamente. Se a categoria
-                    não existir, criaremos uma nova.
+                    abaixo. O código é gerado automaticamente e os dados são
+                    gravados diretamente no banco MongoDB. Se a categoria não
+                    existir, criaremos uma nova.
                   </p>
 
                   <ul className="admin-helper-list">
@@ -1396,17 +1420,57 @@ function AdminPage() {
                     <li>Preço de Venda</li>
                     <li>Categoria</li>
                     <li>SubCategoria (opcional, vinculada à Categoria)</li>
+                    <li>Destaque (Sim = marcado, Não ou vazio = desmarcado)</li>
                   </ul>
 
-                  <label>
-                    Arquivo da planilha
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={handleImportFileChange}
-                      required
-                    />
-                  </label>
+                  <div className="import-file-row">
+                    <label>
+                      Arquivo da planilha
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        onChange={handleImportFileChange}
+                        required
+                      />
+                    </label>
+
+                    {importFile && (
+                      <div className="import-example" aria-live="polite">
+                        <div className="import-example-header">
+                          <strong>Exemplo de preenchimento</strong>
+                          <span>{importFile?.name}</span>
+                        </div>
+                        <div className="import-example-table-wrapper">
+                          <table className="import-example-table">
+                            <thead>
+                              <tr>
+                                <th>CodBarras</th>
+                                <th>Descrição</th>
+                                <th>Preço de Custo</th>
+                                <th>Preço de Venda</th>
+                                <th>Categoria</th>
+                                <th>SubCategoria</th>
+                                <th>Destaque</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {importExampleRows.map((row) => (
+                                <tr key={`${row.CodBarras}-${row.Descrição}`}>
+                                  <td>{row.CodBarras}</td>
+                                  <td>{row.Descrição}</td>
+                                  <td>{row['Preço de Custo']}</td>
+                                  <td>{row['Preço de Venda']}</td>
+                                  <td>{row.Categoria}</td>
+                                  <td>{row.SubCategoria || '-'}</td>
+                                  <td>{row.Destaque}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   {importResult && (
                     <div className="import-summary">

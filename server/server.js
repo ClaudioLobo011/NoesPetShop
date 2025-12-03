@@ -495,6 +495,7 @@ app.post(
       const createdProducts = []
       const updatedProducts = []
       const errors = []
+      const seenBarcodes = new Map()
 
       for (let i = 0; i < parsedRows.length; i += 1) {
         const row = parsedRows[i]
@@ -542,6 +543,14 @@ app.post(
         const subcategoryName = normalizeText(
           pickField(row, ['SubCategoria', 'Subcategoria', 'SUBCATEGORIA']),
         )
+
+        const featuredRaw = normalizeText(pickField(row, ['Destaque', 'DESTAQUE']))
+        const featured =
+          featuredRaw === ''
+            ? null
+            : ['sim', 's', 'true', '1', 'yes'].includes(
+                featuredRaw.toLowerCase(),
+              )
 
         if (!name || salePrice === null) {
           errors.push({
@@ -640,6 +649,18 @@ app.post(
           return (p.name || '').toLowerCase() === name.toLowerCase()
         })
 
+        if (codBarras) {
+          const seenRow = seenBarcodes.get(codBarras)
+          if (seenRow) {
+            errors.push({
+              row: rowNumber,
+              mensagem: `Código de barras repetido (já informado na linha ${seenRow}).`,
+            })
+            continue
+          }
+          seenBarcodes.set(codBarras, rowNumber)
+        }
+
         const descriptionDetailed = normalizeText(
           pickField(row, ['Descrição Detalhada', 'Descricao Detalhada']),
         )
@@ -650,7 +671,10 @@ app.post(
           price: salePrice,
           category: resolvedCategory,
           subcategory: resolvedSubcategory,
-          featured: true,
+          featured:
+            featured !== null
+              ? featured
+              : existingProduct?.featured ?? false,
           codBarras,
           costPrice,
         }
