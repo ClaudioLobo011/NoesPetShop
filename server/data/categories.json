@@ -2,20 +2,18 @@
   {
     "id": 1,
     "cod": 1,
-    "name": "Rações",
+    "name": "Alimentação",
     "description": "",
     "parentId": null,
-    "createdAt": "2025-11-19T21:58:56.878Z",
-    "updatedAt": "2025-11-19T21:59:39.831Z"
+    "createdAt": "2025-12-03T03:23:26.751Z"
   },
   {
     "id": 2,
     "cod": 2,
-    "name": "Medicamentos",
+    "name": "Varejo",
     "description": "",
-    "parentId": null,
-    "createdAt": "2025-11-19T21:59:10.704Z",
-    "updatedAt": "2025-11-19T21:59:45.957Z"
+    "parentId": 1,
+    "createdAt": "2025-12-03T03:23:26.754Z"
   },
   {
     "id": 3,
@@ -23,6 +21,70 @@
     "name": "Acessórios",
     "description": "",
     "parentId": null,
-    "createdAt": "2025-11-19T21:59:54.112Z"
+    "createdAt": "2025-12-03T03:23:26.757Z"
+  },
+  {
+    "id": 4,
+    "cod": 4,
+    "name": "Medicamentos",
+    "description": "",
+    "parentId": null,
+    "createdAt": "2025-12-03T03:23:26.764Z"
+  },
+  {
+    "id": 5,
+    "cod": 5,
+    "name": "Higiêne",
+    "description": "",
+    "parentId": null,
+    "createdAt": "2025-12-03T03:23:26.820Z"
+  },
+  {
+    "id": 6,
+    "cod": 6,
+    "name": "Casa e Jardim",
+    "description": "",
+    "parentId": null,
+    "createdAt": "2025-12-03T03:23:27.007Z"
+  },
+  {
+    "id": 7,
+    "cod": 7,
+    "name": "Controle de Pragas",
+    "description": "",
+    "parentId": null,
+    "createdAt": "2025-12-03T03:23:27.069Z"
+  },
+  {
+    "id": 8,
+    "cod": 8,
+    "name": "Animais",
+    "description": "",
+    "parentId": null,
+    "createdAt": "2025-12-03T03:23:28.668Z"
+  },
+  {
+    "id": 9,
+    "cod": 9,
+    "name": "Varejo",
+    "description": "",
+    "parentId": 3,
+    "createdAt": "2025-12-03T03:23:29.067Z"
+  },
+  {
+    "id": 10,
+    "cod": 10,
+    "name": "Varejo",
+    "description": "",
+    "parentId": 4,
+    "createdAt": "2025-12-03T03:23:37.850Z"
+  },
+  {
+    "id": 11,
+    "cod": 11,
+    "name": "Varejo",
+    "description": "",
+    "parentId": 5,
+    "createdAt": "2025-12-03T03:23:37.860Z"
   }
 ]

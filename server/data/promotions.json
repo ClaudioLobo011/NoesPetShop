@@ -1,14 +1,1 @@
-[
-  {
-    "id": 1,
-    "cod": 1,
-    "productId": 1,
-    "type": "takepay",
-    "percent": null,
-    "takeQty": 4,
-    "payQty": 3,
-    "minQty": null,
-    "active": true,
-    "createdAt": "2025-11-19T22:39:53.309Z"
-  }
-]
+[]
