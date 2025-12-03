@@ -1134,6 +1134,55 @@ body {
   font-weight: 600;
 }
 
+.bulk-header-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.bulk-sort-buttons {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.bulk-sort-button {
+  background: transparent;
+  color: var(--color-light);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.bulk-sort-button:hover,
+.bulk-sort-button:focus-visible {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  outline: none;
+}
+
+.bulk-sort-button.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: rgba(71, 102, 255, 0.12);
+}
+
+.bulk-featured-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.bulk-featured-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
 .bulk-edit-body {
   display: flex;
   flex-direction: column;
