@@ -6,11 +6,16 @@ import { API_URL } from '../config/apiConfig'
 function AdminPage() {
   const { adminUser, checking, logout } = useAuth()
 
-  const [activeSection, setActiveSection] = useState('products') // 'products' | 'import' | 'categories' | 'promotions' | 'bulkEdit'
+  const [activeSection, setActiveSection] = useState('products') // 'products' | 'import' | 'categories' | 'promotions' | 'bulkEdit' | 'imageImport'
 
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
+
+  // ---- IMPORTAÇÃO DE IMAGENS ----
+  const [imageImportSummary, setImageImportSummary] = useState([])
+  const [imageImporting, setImageImporting] = useState(false)
+  const IMAGE_UPLOAD_BATCH_LIMIT = 200
   const importExampleRows = useMemo(
     () => [
       {
@@ -673,20 +678,26 @@ function AdminPage() {
     }
   }
 
-  async function handleUploadImage(product, file, onUploaded) {
-    if (!file) return
+  async function uploadImageRequest(product, file) {
+    if (!file) {
+      return { success: false, error: 'Arquivo de imagem inválido.' }
+    }
 
     if (!product.codBarras) {
-      setError('Defina um Código de barras no produto antes de enviar a imagem.')
-      return
+      return {
+        success: false,
+        error: 'Defina um Código de barras no produto antes de enviar a imagem.',
+      }
     }
 
     const identifiers = getProductIdentifiers(product)
     const targetId = identifiers[0] || getProductId(product)
 
     if (!targetId) {
-      setError('Não foi possível identificar o produto para enviar a imagem.')
-      return
+      return {
+        success: false,
+        error: 'Não foi possível identificar o produto para enviar a imagem.',
+      }
     }
 
     const formData = new FormData()
@@ -694,7 +705,25 @@ function AdminPage() {
     formData.append('image', file)
 
     try {
-      clearMessages()
+      const readResponse = async (res) => {
+        try {
+          const contentType = res.headers.get('content-type') || ''
+          const text = await res.text()
+
+          if (contentType.includes('application/json')) {
+            return JSON.parse(text)
+          }
+
+          try {
+            return JSON.parse(text)
+          } catch (err) {
+            return { message: text || 'Resposta inválida do servidor.' }
+          }
+        } catch (err) {
+          return { message: 'Não foi possível ler a resposta do servidor.' }
+        }
+      }
+
       const res = await fetch(
         `${API_URL}/api/products/${targetId}/image`,
         {
@@ -703,11 +732,22 @@ function AdminPage() {
           body: formData,
         },
       )
-      const data = await res.json()
+      const data = await readResponse(res)
+
       if (!res.ok) {
-        throw new Error(data.message || 'Erro ao enviar imagem.')
+        const fallbackMessage = res.status === 404
+          ? 'Produto não encontrado no servidor.'
+          : res.status === 500
+            ? 'Erro interno ao processar a imagem. Tente novamente.'
+            : 'Erro ao enviar imagem.'
+
+        const message =
+          (data && typeof data.message === 'string' && data.message.trim()) ||
+          fallbackMessage
+
+        return { success: false, error: message }
       }
-      setSuccess('Imagem enviada com sucesso.')
+
       setProducts((prev) =>
         prev.map((p) =>
           getProductId(p) === targetId
@@ -722,13 +762,34 @@ function AdminPage() {
             : row,
         ),
       )
-      if (typeof onUploaded === 'function') {
-        onUploaded(data.imageUrl)
-      }
+
+      return { success: true, imageUrl: data.imageUrl }
     } catch (err) {
       console.error(err)
-      setError(err.message)
+      return { success: false, error: err.message || 'Erro ao enviar imagem.' }
     }
+  }
+
+  async function handleUploadImage(product, file, onUploaded, options = {}) {
+    const { showMessage = true } = options ?? {}
+    if (showMessage) {
+      clearMessages()
+    }
+
+    const result = await uploadImageRequest(product, file)
+
+    if (result.success) {
+      if (showMessage) {
+        setSuccess('Imagem enviada com sucesso.')
+      }
+      if (typeof onUploaded === 'function') {
+        onUploaded(result.imageUrl)
+      }
+    } else if (showMessage) {
+      setError(result.error)
+    }
+
+    return result
   }
 
   const filteredProducts = useMemo(() => {
@@ -768,6 +829,176 @@ function AdminPage() {
       featured: normalized.featured !== false,
       codBarras: normalized.codBarras || '',
       hasImage: Boolean(normalized.imageUrl),
+    }
+  }
+
+  function parseImageFileName(fileName) {
+    if (!fileName) return null
+
+    const match = fileName.match(/^(\d+)(?:-(\d+))?\.(png|jpe?g|webp)$/i)
+    if (!match) return null
+
+    const variant = match[2] ? parseInt(match[2], 10) : 0
+
+    return {
+      codBarras: match[1],
+      variant: Number.isNaN(variant) ? Number.MAX_SAFE_INTEGER : variant,
+    }
+  }
+
+  function handleImageFolderChange(e) {
+    const files = Array.from(e.target.files || [])
+    setImageImporting(false)
+    clearMessages()
+
+    if (files.length === 0) {
+      setImageImportSummary([])
+      return
+    }
+
+    const grouped = new Map()
+
+    files.forEach((file) => {
+      const parsed = parseImageFileName(file.name)
+      if (!parsed) return
+
+      const current = grouped.get(parsed.codBarras)
+      const shouldReplace =
+        !current ||
+        parsed.variant < current.variant ||
+        (parsed.variant === current.variant &&
+          file.name.localeCompare(current.file.name) < 0)
+
+      if (shouldReplace) {
+        grouped.set(parsed.codBarras, { ...parsed, file })
+      }
+    })
+
+    const summary = Array.from(grouped.values())
+      .map((item) => {
+        const product = products.find(
+          (p) => normalizeId(p.codBarras) === item.codBarras,
+        )
+        return {
+          codBarras: item.codBarras,
+          product,
+          file: item.file,
+          previewUrl: URL.createObjectURL(item.file),
+          status: 'pendente',
+          error: '',
+        }
+      })
+      .sort((a, b) => a.codBarras.localeCompare(b.codBarras))
+
+    if (summary.length === 0) {
+      setError('Nenhum arquivo válido encontrado. Use nomes como codbarras-1.png')
+    }
+
+    setImageImportSummary(summary)
+  }
+
+  async function handleStartImageImport() {
+    if (imageImportSummary.length === 0) {
+      setError('Selecione uma pasta com imagens antes de iniciar a importação.')
+      return
+    }
+
+    const validItems = imageImportSummary.filter((item) => item.product)
+    if (validItems.length === 0) {
+      setError('Nenhum produto foi encontrado para as imagens selecionadas.')
+      return
+    }
+
+    clearMessages()
+    setImageImporting(true)
+
+    const batches = []
+    for (let i = 0; i < validItems.length; i += IMAGE_UPLOAD_BATCH_LIMIT) {
+      batches.push(validItems.slice(i, i + IMAGE_UPLOAD_BATCH_LIMIT))
+    }
+
+    let successCount = 0
+    let failCount = 0
+
+    for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+      const batch = batches[batchIndex]
+
+      for (const item of batch) {
+        setImageImportSummary((prev) =>
+          prev.map((entry) =>
+            entry.codBarras === item.codBarras
+              ? { ...entry, status: 'enviando', error: '' }
+              : entry,
+          ),
+        )
+
+        const result = await handleUploadImage(
+          item.product,
+          item.file,
+          (imageUrl) => {
+            setImageImportSummary((prev) =>
+              prev.map((entry) =>
+                entry.codBarras === item.codBarras
+                  ? { ...entry, uploadedUrl: imageUrl }
+                  : entry,
+              ),
+            )
+          },
+          { showMessage: false },
+        )
+
+        if (result?.success) {
+          successCount += 1
+          setImageImportSummary((prev) =>
+            prev.map((entry) =>
+              entry.codBarras === item.codBarras
+                ? { ...entry, status: 'concluido' }
+                : entry,
+            ),
+          )
+        } else {
+          failCount += 1
+          setImageImportSummary((prev) =>
+            prev.map((entry) =>
+              entry.codBarras === item.codBarras
+                ? {
+                    ...entry,
+                    status: 'erro',
+                    error: result?.error || 'Erro ao enviar imagem.',
+                  }
+                : entry,
+            ),
+          )
+        }
+      }
+    }
+
+    setImageImporting(false)
+
+    if (successCount > 0) {
+      const batchesCount = batches.length
+      const batchInfo =
+        batchesCount > 1
+          ? ` Processadas em ${batchesCount} lote${
+              batchesCount > 1 ? 's' : ''
+            } de até ${IMAGE_UPLOAD_BATCH_LIMIT} arquivo${
+              IMAGE_UPLOAD_BATCH_LIMIT > 1 ? 's' : ''
+            }.`
+          : ''
+
+      setSuccess(
+        `${successCount} imagem${successCount > 1 ? 's' : ''} importada${
+          successCount > 1 ? 's' : ''
+        } com sucesso.${batchInfo}`,
+      )
+    }
+
+    if (failCount > 0) {
+      setError(
+        `Importação finalizada com ${failCount} erro${
+          failCount > 1 ? 's' : ''
+        }.`,
+      )
     }
   }
 
@@ -1237,6 +1468,21 @@ function AdminPage() {
           <button
             type="button"
             className={
+              activeSection === 'imageImport'
+                ? 'admin-sidebar-btn active'
+                : 'admin-sidebar-btn'
+            }
+            onClick={() => {
+              setActiveSection('imageImport')
+              clearMessages()
+            }}
+          >
+            Importar Imagens
+          </button>
+
+          <button
+            type="button"
+            className={
               activeSection === 'bulkEdit'
                 ? 'admin-sidebar-btn active'
                 : 'admin-sidebar-btn'
@@ -1634,6 +1880,129 @@ function AdminPage() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'imageImport' && (
+            <div className="admin-categories">
+              <div className="admin-categories-layout">
+                <div className="admin-form">
+                  <h3>Importar Imagens</h3>
+
+                  <p className="admin-helper-text">
+                    Selecione uma pasta com imagens nomeadas pelo código de
+                    barras do produto (ex.: 1234567890123.png ou
+                    1234567890123-1.jpg). Vamos escolher apenas um arquivo por
+                    produto, priorizando o nome sem sufixo ou o menor índice.
+                  </p>
+
+                  <label>
+                    Pasta de imagens
+                    <input
+                      type="file"
+                      webkitdirectory="true"
+                      directory="true"
+                      multiple
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      onChange={handleImageFolderChange}
+                    />
+                  </label>
+
+                  <div className="admin-helper-text" style={{ marginTop: '0.5rem' }}>
+                    • Apenas um arquivo é selecionado por produto
+                    automaticamente.<br />• Somente códigos de barras
+                    presentes em produtos cadastrados serão importados.<br />•
+                    Clique em "Iniciar Importação" para enviar ao Cloudflare.
+                  </div>
+
+                  <div className="form-row form-actions">
+                    <button
+                      type="button"
+                      className="primary-button full"
+                      onClick={handleStartImageImport}
+                      disabled={imageImporting}
+                    >
+                      {imageImporting ? 'Importando imagens...' : 'Iniciar Importação'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="admin-category-list-wrapper">
+                  <div className="admin-list-header">
+                    <h3>Resumo das imagens encontradas</h3>
+                    <small style={{ color: 'var(--color-muted)' }}>
+                      {imageImportSummary.length} arquivo(s) selecionado(s)
+                    </small>
+                  </div>
+
+                  {imageImportSummary.length === 0 ? (
+                    <p>Selecione uma pasta para gerar o resumo.</p>
+                  ) : (
+                    <ul className="admin-products-list">
+                      {imageImportSummary.map((item) => (
+                        <li key={`${item.codBarras}-${item.file.name}`} className="admin-product-item">
+                          <div className="admin-product-info">
+                            <div className="admin-product-thumb" aria-label={`Pré-visualização da imagem do produto ${item.codBarras}`}>
+                              {item.previewUrl ? (
+                                <img
+                                  src={item.previewUrl}
+                                  alt={`Imagem para o produto ${item.codBarras}`}
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <span>Prévia indisponível</span>
+                              )}
+                            </div>
+
+                            <div>
+                              <strong>
+                                {item.product
+                                  ? getProductLabel(item.product)
+                                  : 'Produto não encontrado'}
+                              </strong>
+                              <p>CodBarras: {item.codBarras}</p>
+                              {item.product ? (
+                                <small>
+                                  {item.product.name || 'Sem nome'} • Cod interno:{' '}
+                                  {getProductId(item.product) || 'N/A'}
+                                </small>
+                              ) : (
+                                <small style={{ color: '#ff6b6b' }}>
+                                  Não foi possível localizar um produto com esse código.
+                                </small>
+                              )}
+                              {item.error && (
+                                <p className="modal-error" style={{ marginTop: '0.3rem' }}>
+                                  {item.error}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="admin-item-actions">
+                            {item.status === 'concluido' && (
+                              <span className="admin-badge">Importado</span>
+                            )}
+                            {item.status === 'enviando' && (
+                              <span className="admin-badge">Enviando...</span>
+                            )}
+                            {item.status === 'erro' && (
+                              <span className="admin-badge" style={{ background: '#ff6b6b' }}>
+                                Erro
+                              </span>
+                            )}
+                            {item.status === 'pendente' && (
+                              <span className="admin-badge" style={{ background: 'rgba(255,255,255,0.7)' }}>
+                                Pendente
+                              </span>
+                            )}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
           )}
